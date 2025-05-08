@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Glenwich Experience Tracker
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/DarthFeanor/glenwich-scripts
 // @version      1.1
 // @description  Tracks XP gain rates and estimates time until next level in Glenwich Online with 5-minute running average
 // @author       Claude
