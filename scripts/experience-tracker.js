@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Glenwich Experience Tracker
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Tracks XP gain rates and estimates time until next level in Glenwich Online
+// @version      1.1
+// @description  Tracks XP gain rates and estimates time until next level in Glenwich Online with 5-minute running average
 // @author       Claude
 // @match        https://*.glenwich.com/*
 // @match        https://glenwich.com/*
@@ -27,6 +27,9 @@
   const updateInterval = 10000; // Update display every 10 seconds
   let displayElement = null;
   let tooltipObserver = null;
+  
+  // Configuration for running average
+  const runningAverageWindow = 5 * 60 * 1000; // 5 minutes in milliseconds
 
   // Create the display panel
   function createDisplayPanel() {
@@ -194,6 +197,32 @@
       return levelElement.textContent.trim();
   }
 
+  // Calculate running average of XP gain based on data points in the last 5 minutes
+  function calculateRunningAverage(expHistory) {
+      const now = Date.now();
+      const cutoffTime = now - runningAverageWindow;
+      
+      // Filter to only include data points from the last 5 minutes
+      const recentDataPoints = expHistory.filter(point => point.timestamp >= cutoffTime);
+      
+      if (recentDataPoints.length < 2) {
+          return 0; // Not enough data for an accurate average
+      }
+      
+      // Sort by timestamp to ensure we're working with chronological data
+      recentDataPoints.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Calculate total exp gained over the period
+      const oldestPoint = recentDataPoints[0];
+      const newestPoint = recentDataPoints[recentDataPoints.length - 1];
+      
+      const totalExpGained = newestPoint.exp - oldestPoint.exp;
+      const timeSpanMinutes = (newestPoint.timestamp - oldestPoint.timestamp) / 60000;
+      
+      // Return exp gain per minute
+      return timeSpanMinutes > 0 ? totalExpGained / timeSpanMinutes : 0;
+  }
+
   // Scan the page for all skill tooltips and save initial data
   function scanInitialData() {
       const tooltips = document.querySelectorAll('.tooltip');
@@ -222,8 +251,10 @@
               initialTimestamp: Date.now(),
               latestTimestamp: Date.now(),
               expGainRate: 0,
+              runningAvgExpRate: 0,
               timeToLevel: '?',
-              isActive: false
+              isActive: false,
+              expHistory: [{ timestamp: Date.now(), exp: expData.totalExp }]
           };
       });
       
@@ -261,6 +292,19 @@
           
           // Check if there's been a change in experience
           if (expData.totalExp !== currentSkill.latestExp) {
+              // Add new data point to history
+              currentSkill.expHistory.push({
+                  timestamp: currentTime,
+                  exp: expData.totalExp
+              });
+              
+              // Cleanup old data points (older than window + extra buffer for calculations)
+              const oldestAllowedTime = currentTime - (runningAverageWindow * 1.5);
+              currentSkill.expHistory = currentSkill.expHistory.filter(
+                  point => point.timestamp >= oldestAllowedTime
+              );
+              
+              // Calculate instant rate for display purposes
               const timeDiffMinutes = (currentTime - currentSkill.latestTimestamp) / 60000;
               const expDiff = expData.totalExp - currentSkill.latestExp;
               
@@ -269,6 +313,9 @@
                   currentSkill.expGainRate = expDiff / timeDiffMinutes;
                   currentSkill.isActive = true;
                   anyActiveSkill = true;
+                  
+                  // Calculate running average
+                  currentSkill.runningAvgExpRate = calculateRunningAverage(currentSkill.expHistory);
               }
               
               // Update latest values
@@ -278,9 +325,9 @@
               // Update exp to level
               currentSkill.expToLevel = expData.expToLevel;
               
-              // Calculate time to level up
-              if (currentSkill.expGainRate > 0) {
-                  const minutesToLevel = currentSkill.expToLevel / currentSkill.expGainRate;
+              // Calculate time to level up based on running average
+              if (currentSkill.runningAvgExpRate > 0) {
+                  const minutesToLevel = currentSkill.expToLevel / currentSkill.runningAvgExpRate;
                   
                   if (minutesToLevel < 60) {
                       currentSkill.timeToLevel = `${Math.ceil(minutesToLevel)} min`;
@@ -337,8 +384,12 @@
                       <span>${skill.level}</span>
                   </div>
                   <div style="display: flex; justify-content: space-between; font-size: 11px;">
-                      <span>XP/min:</span>
+                      <span>Current XP/min:</span>
                       <span>${Math.round(skill.expGainRate)} xp</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                      <span>5-min Avg XP/min:</span>
+                      <span>${Math.round(skill.runningAvgExpRate)} xp</span>
                   </div>
                   <div style="display: flex; justify-content: space-between; font-size: 11px;">
                       <span>Level up in:</span>
@@ -399,7 +450,7 @@
 
   // Main initialization function
   function initExpTracker() {
-      console.log('[XP Tracker] Initializing Glenwich XP Tracker...');
+      console.log('[XP Tracker] Initializing Glenwich XP Tracker with 5-minute running average...');
       
       // Create display panel
       const panel = createDisplayPanel();
@@ -461,7 +512,13 @@
                   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
               }
           },
-          getData: () => skillData
+          getData: () => skillData,
+          getRunningAverage: (skillName) => {
+              if (skillData[skillName]) {
+                  return calculateRunningAverage(skillData[skillName].expHistory);
+              }
+              return 0;
+          }
       };
       
       console.log('[XP Tracker] Initialized successfully! Press Alt+X to toggle the display.');
