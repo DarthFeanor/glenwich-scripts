@@ -6,7 +6,7 @@
 // @author       Claude
 // @match        https://*.glenwich.com/*
 // @match        https://glenwich.com/*
-// @icon         https://raw.githubusercontent.com/Ah-Cremb/Glenwich-Online-Art/refs/heads/main/public/favicon.ico
+// @icon         https://glenwich.com/favicon.png
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
