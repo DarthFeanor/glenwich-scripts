@@ -1,655 +1,409 @@
 // ==UserScript==
-// @name         Glenwich Online Auto Bank Items
+// @name         Glenwich Online Auto Bank Items (Styled)
 // @namespace    https://github.com/DarthFeanor/glenwich-scripts
-// @version      2.0
-// @description  Automatically bank items without Luck Bonuses, Offensive Stats, Defensive Stats, or Level Requirements with widget
-// @author       Claude
+// @version      2.7
+// @description  Automatically bank items without Luck Bonuses, Offensive Stats, Defensive Stats, or Level Requirements with styled widget
+// @author       Txdxrxv
 // @match        *://glenwich.com/*
 // @match        *://*.glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
-
 (function() {
     'use strict';
+    const config = { checkInterval: 1500, actionDelay: 800, maxLogEntries: 50, initDelay: 5000 };
+    const state = { isRunning: false, isBankDetected: false, itemsDeposited: 0, totalValue: 0, depositing: false, sessionStart: null, intervalId: null, minimized: true };
+    let widget, logContainer, logList;
+    let bankIndicator, bankLabel, runIndicator, runLabel;
+    let toggleBtn;
+    let statItems, statValue, statTime;
 
-    // Configuration
-    const config = {
-        checkInterval: 1500,     // How often to check for items (ms)
-        actionDelay: 800,        // Delay between actions (ms)
-        maxLogEntries: 50,       // Maximum log entries
-        initDelay: 5000          // Wait before initializing (ms)
-    };
-
-    // State tracking
-    const state = {
-        isRunning: false,
-        isBankDetected: false,
-        itemsDeposited: 0,
-        totalValue: 0,
-        depositing: false,
-        sessionStart: null,
-        intervalId: null,
-        minimized: false
-    };
-
-    // DOM elements (will be set in createWidget)
-    let widget, logContainer, logElement, bankStatusIndicator,
-        runStatusIndicator, toggleButton, statsDeposited, statsValue, statsTime;
-
-    // Wait for game to load completely before initializing
     setTimeout(() => {
         console.log('[Auto Bank] Initializing Auto Bank Items script...');
-        createStyles();
+        injectStyles();
         createWidget();
-        startPeriodicBankCheck();
+        detectBank();
+        // continuous bank detection
+        setInterval(detectBank, 3000);
     }, config.initDelay);
 
-    // Create widget styles
-    function createStyles() {
-        const styleElement = document.createElement('style');
-        styleElement.textContent = `
-            #glenwich-auto-bank-widget {
-                position: fixed;
-                top: 70px;
-                right: 10px;
-                width: 220px;
-                background-color: #2b140e;
-                border: 2px solid #ffb83f;
-                border-radius: 5px;
-                color: #ffb83f;
-                z-index: 10000;
-                font-family: monospace;
-                font-size: 12px;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-                transition: box-shadow 0.3s;
-                overflow: hidden;
-            }
-            #glenwich-auto-bank-widget:hover {
-                box-shadow: 0 6px 12px rgba(0, 0, 0, 0.7);
-            }
-            #glenwich-auto-bank-header {
-                text-align: center;
-                background-color: #2b140e;
-                padding: 8px 12px;
-                cursor: move;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                border-bottom: 1px solid #ffb83f;
-            }
-            #glenwich-auto-bank-header h3 {
-                margin: 0;
-                font-size: 14px;
-                font-weight: bold;
-                flex-grow: 1;
-                text-align: center;
-            }
-            #glenwich-auto-bank-content {
-                padding: 10px;
-            }
-            #glenwich-auto-bank-status {
-                margin-bottom: 10px;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-            }
-            .glenwich-status-indicator {
-                display: inline-block;
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                margin-right: 6px;
-            }
-            .glenwich-status-on {
-                background-color: #7fff7f;
-            }
-            .glenwich-status-off {
-                background-color: #ff7f7f;
-            }
-            #glenwich-auto-bank-controls {
-                display: flex;
-                gap: 5px;
-                margin-bottom: 10px;
-            }
-            .glenwich-button {
-                background-color: #2a2a2a;
-                color: #ffb83f;
-                border: 1px solid #ffb83f;
-                border-radius: 3px;
-                padding: 3px 8px;
-                cursor: pointer;
-                font-size: 12px;
-                transition: background-color 0.2s;
-                flex: 1;
-            }
-            .glenwich-button:hover {
-                background-color: #3d1e14;
-            }
-            .glenwich-button.active {
-                background-color: #4a1810;
-            }
-            #glenwich-auto-bank-log-container {
-                max-height: 120px;
-                overflow-y: auto;
-                margin-top: 8px;
-                background-color: #1f1209;
-                border-radius: 3px;
-                padding: 8px;
-            }
-            #glenwich-auto-bank-log {
-                font-size: 11px;
-                color: #e0e0e0;
-                margin: 0;
-                padding: 0;
-                list-style-type: none;
-            }
-            #glenwich-auto-bank-log li {
-                margin-bottom: 4px;
-                padding-bottom: 4px;
-                border-bottom: 1px solid #3d1e14;
-            }
-            #glenwich-auto-bank-log li:last-child {
-                border-bottom: none;
-            }
-            .glenwich-log-time {
-                color: #aaa;
-                font-size: 9px;
-            }
-            .glenwich-log-success {
-                color: #7fff7f;
-            }
-            .glenwich-log-error {
-                color: #ff7f7f;
-            }
-            .glenwich-log-info {
-                color: #7fbfff;
-            }
-            .glenwich-minimize-button {
-                background: none;
-                border: none;
-                color: #ffb83f;
-                cursor: pointer;
-                font-size: 16px;
-                padding: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 24px;
-                height: 24px;
-            }
-            .glenwich-stats {
-                display: flex;
-                justify-content: space-between;
-                margin-top: 8px;
-                background-color: #1f1209;
-                border-radius: 3px;
-                padding: 8px;
-                font-size: 11px;
-            }
-            .glenwich-stats div {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-            }
-            .glenwich-stats-label {
-                font-size: 9px;
-                color: #aaa;
-            }
-            .glenwich-stats-value {
-                font-size: 12px;
-                color: #ffb83f;
-            }
-            .glenwich-info-text {
-                font-size: 11px;
-                margin-bottom: 5px;
-                color: #cccccc;
-                font-style: italic;
-            }
+    function injectStyles() {
+        const css = `
+            #bank-widget { position: fixed; top: 70px; right: 10px; width: 260px; background: rgba(43,20,14,0.95); border: 1px solid #ffb83f; border-radius: 6px; color: #ffb83f; font-family: Arial, sans-serif; font-size: 13px; box-shadow: 0 3px 8px rgba(0,0,0,0.5); z-index: 100000; }
+            #bank-widget.minimized .content { display: none; }
+            #bank-widget .header { display: flex; align-items: center; justify-content: space-between; padding: 8px; background: rgba(0,0,0,0.3); border-bottom: 1px solid #ffb83f; cursor: move; }
+            #bank-widget .title-container { flex: 1; text-align: center; }
+            #bank-widget .title { font-weight: bold; font-size: 14px; user-select: none; }
+            #bank-widget .subtitle { font-size: 10px; color: #ffb83f; opacity: 0.8; user-select: none; }
+            #bank-widget .min-btn { background: none; border: none; color: #ffb83f; font-size: 16px; cursor: pointer; }
+            #bank-widget .content { padding: 10px; background: rgba(0,0,0,0.1); }
+            .status-row { display: flex; align-items: center; margin-bottom: 6px; }
+            .status-label { margin-left: 6px; font-size: 12px; }
+            .indicator { width: 10px; height: 10px; border-radius: 50%; border: 1px solid #333; }
+            .on { background: #7fff7f; }
+            .off { background: #ff7f7f; }
+            .controls { display: flex; gap: 6px; margin: 8px 0; }
+            .btn { flex: 1; padding: 5px; background: #2a2a2a; border: 1px solid #ffb83f; border-radius: 4px; color: #ffb83f; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+            .btn:hover { background: #3d1e14; }
+            .btn.active { background: #4a1810; }
+            .info { font-size: 11px; margin-bottom: 8px; color: #ccc; font-style: italic; }
+            .stats { display: flex; justify-content: space-between; background: #1f1209; border-radius: 4px; padding: 8px; font-size: 12px; }
+            .stat { text-align: center; }
+            .stat-label { font-size: 10px; color: #aaa; }
+            .stat-value { color: #ffb83f; }
+            #log-container { max-height: 140px; background: #1f1209; border-radius: 4px; padding: 8px; overflow-y: auto; }
+            #log-list { list-style: none; margin: 0; padding: 0; font-size: 11px; }
+            #log-list li { margin-bottom: 4px; border-bottom: 1px solid #3d1e14; padding-bottom: 4px; }
+            .log-time { color: #aaa; font-size: 9px; margin-right: 4px; }
+            .log-info { color: #7fbfff; }
+            .log-success { color: #7fff7f; }
+            .log-error { color: #ff7f7f; }
+            .footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 10px; }
+            .attribution { font-size: 10px; color: #999; font-style: italic; max-width: 65%; text-overflow: ellipsis; overflow: hidden; }
         `;
-        document.head.appendChild(styleElement);
+        const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
     }
 
-    // Create the widget
+    function makeStat(label) {
+        const stat = document.createElement('div');
+        stat.className = 'stat';
+
+        const statLabel = document.createElement('div');
+        statLabel.className = 'stat-label';
+        statLabel.textContent = label;
+
+        const statValue = document.createElement('div');
+        statValue.className = 'stat-value';
+        statValue.textContent = '0';
+
+        stat.append(statLabel, statValue);
+        return [stat, statValue];
+    }
+
+    function makeDraggable(el, handle) {
+        let dragging = false, startX=0, startY=0, offsetX=0, offsetY=0;
+
+        handle.addEventListener('mousedown', e => {
+            e.preventDefault();
+            dragging = true;
+            startX = e.clientX - offsetX;
+            startY = e.clientY - offsetY;
+            document.addEventListener('mousemove', onDrag);
+            document.addEventListener('mouseup', onStop);
+        });
+
+        function onDrag(e) {
+            if (!dragging) return;
+            offsetX = e.clientX - startX;
+            offsetY = e.clientY - startY;
+            el.style.transform = `translate(${offsetX}px,${offsetY}px)`;
+        }
+
+        function onStop() {
+            dragging = false;
+            document.removeEventListener('mousemove', onDrag);
+            document.removeEventListener('mouseup', onStop);
+        }
+    }
+
     function createWidget() {
-        // Create widget container
         widget = document.createElement('div');
-        widget.id = 'glenwich-auto-bank-widget';
+        widget.id = 'bank-widget';
+        widget.classList.add('minimized');
 
-        // Header with drag handle
         const header = document.createElement('div');
-        header.id = 'glenwich-auto-bank-header';
-        header.innerHTML = '<h3>Auto Bank Items</h3>';
+        header.className = 'header';
 
-        // Minimize button
-        const minimizeBtn = document.createElement('button');
-        minimizeBtn.className = 'glenwich-minimize-button';
-        minimizeBtn.innerHTML = '−';
-        minimizeBtn.title = 'Minimize';
-        minimizeBtn.addEventListener('click', toggleMinimize);
-        header.appendChild(minimizeBtn);
+        // Create title container with main title and subtitle
+        const titleContainer = document.createElement('div');
+        titleContainer.className = 'title-container';
 
-        // Widget content
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = 'Auto Bank Items';
+
+        const subtitle = document.createElement('div');
+        subtitle.className = 'subtitle';
+        subtitle.textContent = 'powered by Gods';
+
+        titleContainer.append(title, subtitle);
+
+        const minBtn = document.createElement('button');
+        minBtn.className = 'min-btn';
+        minBtn.textContent = state.minimized ? '+' : '−';
+        minBtn.addEventListener('click', () => {
+            state.minimized = !state.minimized;
+            widget.classList.toggle('minimized', state.minimized);
+            minBtn.textContent = state.minimized ? '+' : '−';
+        });
+
+        header.append(titleContainer, minBtn);
+        widget.append(header);
+
         const content = document.createElement('div');
-        content.id = 'glenwich-auto-bank-content';
+        content.className = 'content';
 
-        // Info text
-        const infoText = document.createElement('div');
-        infoText.className = 'glenwich-info-text';
-        infoText.innerHTML = 'This script will automatically bank items without Luck Bonuses, Offensive Stats, Defensive Stats, or Level Requirements.';
-        content.appendChild(infoText);
+        const info = document.createElement('div');
+        info.className = 'info';
+        info.textContent = 'Automatically bank items without Luck Bonuses, Offensive Stats, Defensive Stats, or Level Requirements.';
+        content.append(info);
 
-        // Status indicators
-        const statusContainer = document.createElement('div');
-        statusContainer.id = 'glenwich-auto-bank-status';
+        // Bank status
+        const bankRow = document.createElement('div');
+        bankRow.className = 'status-row';
+        bankIndicator = document.createElement('span');
+        bankIndicator.className = 'indicator off';
+        bankLabel = document.createElement('span');
+        bankLabel.className = 'status-label';
+        bankLabel.textContent = 'Bank: Not Detected';
+        bankRow.append(bankIndicator, bankLabel);
+        content.append(bankRow);
 
-        // Bank detection status
-        const bankStatus = document.createElement('div');
-        bankStatusIndicator = document.createElement('span');
-        bankStatusIndicator.className = 'glenwich-status-indicator glenwich-status-off';
-        bankStatus.appendChild(bankStatusIndicator);
-        bankStatus.appendChild(document.createTextNode('Bank: Not Detected'));
-
-        // Running status
-        const runStatus = document.createElement('div');
-        runStatusIndicator = document.createElement('span');
-        runStatusIndicator.className = 'glenwich-status-indicator glenwich-status-off';
-        runStatus.appendChild(runStatusIndicator);
-        runStatus.appendChild(document.createTextNode('Status: Stopped'));
-
-        statusContainer.appendChild(bankStatus);
-        statusContainer.appendChild(runStatus);
-        content.appendChild(statusContainer);
+        // Run status
+        const runRow = document.createElement('div');
+        runRow.className = 'status-row';
+        runIndicator = document.createElement('span');
+        runIndicator.className = 'indicator off';
+        runLabel = document.createElement('span');
+        runLabel.className = 'status-label';
+        runLabel.textContent = 'Status: Stopped';
+        runRow.append(runIndicator, runLabel);
+        content.append(runRow);
 
         // Controls
-        const controls = document.createElement('div');
-        controls.id = 'glenwich-auto-bank-controls';
+        const ctr = document.createElement('div');
+        ctr.className = 'controls';
+        toggleBtn = document.createElement('button');
+        toggleBtn.className = 'btn';
+        toggleBtn.textContent = 'Start';
+        toggleBtn.addEventListener('click', toggleAuto);
 
-        // Toggle button
-        toggleButton = document.createElement('button');
-        toggleButton.className = 'glenwich-button';
-        toggleButton.innerText = 'Start Auto Bank';
-        toggleButton.addEventListener('click', toggleAutoBanker);
-        controls.appendChild(toggleButton);
-
-        // Manual check button
-        const manualCheckButton = document.createElement('button');
-        manualCheckButton.className = 'glenwich-button';
-        manualCheckButton.innerText = 'Check Bank';
-        manualCheckButton.addEventListener('click', () => {
-            addLog('Manually checking for bank...', 'info');
-            checkForBank();
+        const checkBtn = document.createElement('button');
+        checkBtn.className = 'btn';
+        checkBtn.textContent = 'Check';
+        checkBtn.addEventListener('click', () => {
+            addLog('Manual bank check', 'info');
+            detectBank();
         });
-        controls.appendChild(manualCheckButton);
 
-        content.appendChild(controls);
+        ctr.append(toggleBtn, checkBtn);
+        content.append(ctr);
 
         // Stats
-        const stats = document.createElement('div');
-        stats.className = 'glenwich-stats';
-
-        // Items deposited stat
-        const depositedStat = document.createElement('div');
-        const depositedLabel = document.createElement('span');
-        depositedLabel.className = 'glenwich-stats-label';
-        depositedLabel.innerText = 'Items Deposited';
-        statsDeposited = document.createElement('span');
-        statsDeposited.className = 'glenwich-stats-value';
-        statsDeposited.innerText = '0';
-        depositedStat.appendChild(depositedLabel);
-        depositedStat.appendChild(statsDeposited);
-
-        // Total value stat
-        const valueStat = document.createElement('div');
-        const valueLabel = document.createElement('span');
-        valueLabel.className = 'glenwich-stats-label';
-        valueLabel.innerText = 'Total Quantity';
-        statsValue = document.createElement('span');
-        statsValue.className = 'glenwich-stats-value';
-        statsValue.innerText = '0';
-        valueStat.appendChild(valueLabel);
-        valueStat.appendChild(statsValue);
-
-        // Run time stat
-        const timeStat = document.createElement('div');
-        const timeLabel = document.createElement('span');
-        timeLabel.className = 'glenwich-stats-label';
-        timeLabel.innerText = 'Run Time';
-        statsTime = document.createElement('span');
-        statsTime.className = 'glenwich-stats-value';
-        statsTime.innerText = '00:00';
-        timeStat.appendChild(timeLabel);
-        timeStat.appendChild(statsTime);
-
-        stats.appendChild(depositedStat);
-        stats.appendChild(valueStat);
-        stats.appendChild(timeStat);
-        content.appendChild(stats);
+        const statsDiv = document.createElement('div');
+        statsDiv.className = 'stats';
+        const [de,posVal] = makeStat('Deposited');
+        statItems = posVal;
+        const [qa,qtyVal] = makeStat('Quantity');
+        statValue = qtyVal;
+        const [rt,rtVal] = makeStat('Run Time');
+        statTime = rtVal;
+        statsDiv.append(de, qa, rt);
+        content.append(statsDiv);
 
         // Log
-        const logContainerEl = document.createElement('div');
-        logContainerEl.id = 'glenwich-auto-bank-log-container';
-        logContainer = logContainerEl;
+        logContainer = document.createElement('div');
+        logContainer.id = 'log-container';
+        logList = document.createElement('ul');
+        logList.id = 'log-list';
+        logContainer.append(logList);
+        content.append(logContainer);
 
-        logElement = document.createElement('ul');
-        logElement.id = 'glenwich-auto-bank-log';
+        // Footer with attribution and close button
+        const footer = document.createElement('div');
+        footer.className = 'footer';
 
-        logContainerEl.appendChild(logElement);
-        content.appendChild(logContainerEl);
+        // Add attribution text
+        const attribution = document.createElement('div');
+        attribution.className = 'attribution';
+        attribution.textContent = 'made by the "Gods" Guild';
 
         // Close button
         const closeBtn = document.createElement('button');
-        closeBtn.innerText = 'Close';
-        closeBtn.className = 'glenwich-button';
-        closeBtn.style.marginTop = '10px';
-        closeBtn.addEventListener('click', () => {
-            widget.style.display = 'none';
-        });
-        content.appendChild(closeBtn);
+        closeBtn.className = 'btn';
+        closeBtn.textContent = 'Close';
+        closeBtn.style.width = '60px';
+        closeBtn.addEventListener('click', () => widget.style.display = 'none');
 
-        // Assemble the widget
-        widget.appendChild(header);
-        widget.appendChild(content);
+        footer.append(attribution, closeBtn);
+        content.append(footer);
+
+        widget.append(content);
         document.body.appendChild(widget);
 
-        // Make the widget draggable
         makeDraggable(widget, header);
 
-        // Add initial log entry
-        addLog('Auto Banker initialized. Press ALT+B to toggle widget.', 'info');
-
-        // Add keyboard shortcut (Alt+B)
-        document.addEventListener('keydown', (e) => {
-            if (e.altKey && e.key === 'b') {
-                widget.style.display = widget.style.display === 'none' ? 'block' : 'none';
-            }
+        // Add Alt+B keyboard shortcut
+        document.addEventListener('keydown', e => {
+            if(e.altKey && e.key.toLowerCase()==='b')
+                widget.style.display = widget.style.display==='none'?'block':'none';
         });
+
+        addLog('Widget initialized. Press Alt+B to toggle.', 'info');
     }
 
-    // Start periodic bank check
-    function startPeriodicBankCheck() {
-        // Check for bank every 3 seconds
-        setInterval(() => {
-            checkForBank();
-        }, 3000);
-
-        // Check immediately
-        setTimeout(checkForBank, 500);
+    function toggleAuto() {
+        if (!state.isBankDetected) {
+            addLog('Cannot start: bank not detected', 'error');
+            return;
+        }
+        state.isRunning ? stopAuto() : startAuto();
     }
 
-    // Make an element draggable
-    function makeDraggable(element, handle) {
-        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    function startAuto() {
+        state.isRunning = true;
+        toggleBtn.classList.add('active');
+        toggleBtn.textContent = 'Stop';
+        runIndicator.classList.replace('off', 'on');
+        runLabel.textContent = 'Status: Running';
 
-        handle.onmousedown = dragMouseDown;
+        state.sessionStart = new Date();
+        state.intervalId = setInterval(() => {
+            updateRunTime();
+            if (state.isBankDetected && !state.depositing) processInventory();
+        }, config.checkInterval);
 
-        function dragMouseDown(e) {
-            e = e || window.event;
-            e.preventDefault();
-            // Get the mouse cursor position at startup
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-            document.onmouseup = closeDragElement;
-            // Call a function whenever the cursor moves
-            document.onmousemove = elementDrag;
-        }
+        addLog('Auto banking started', 'success');
 
-        function elementDrag(e) {
-            e = e || window.event;
-            e.preventDefault();
-            // Calculate the new cursor position
-            pos1 = pos3 - e.clientX;
-            pos2 = pos4 - e.clientY;
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-            // Set the element's new position
-            element.style.top = (element.offsetTop - pos2) + "px";
-            element.style.left = (element.offsetLeft - pos1) + "px";
-            element.style.right = 'auto';
-        }
-
-        function closeDragElement() {
-            // Stop moving when mouse button is released
-            document.onmouseup = null;
-            document.onmousemove = null;
+        // Run immediately if bank is detected
+        if (state.isBankDetected && !state.depositing) {
+            processInventory();
         }
     }
 
-    // Toggle the minimized state
-    function toggleMinimize() {
-        const content = document.getElementById('glenwich-auto-bank-content');
-        const minimizeBtn = document.querySelector('.glenwich-minimize-button');
+    function stopAuto() {
+        state.isRunning = false;
+        toggleBtn.classList.remove('active');
+        toggleBtn.textContent = 'Start';
+        runIndicator.classList.replace('on', 'off');
+        runLabel.textContent = 'Status: Stopped';
 
-        state.minimized = !state.minimized;
-
-        if (state.minimized) {
-            content.style.display = 'none';
-            minimizeBtn.innerHTML = '+';
-            minimizeBtn.title = 'Maximize';
-        } else {
-            content.style.display = 'block';
-            minimizeBtn.innerHTML = '−';
-            minimizeBtn.title = 'Minimize';
+        if (state.intervalId) {
+            clearInterval(state.intervalId);
+            state.intervalId = null;
         }
+
+        addLog('Auto banking stopped', 'info');
     }
 
-    // Add a log entry
-    function addLog(message, type = 'info') {
-        const logItem = document.createElement('li');
-        const time = new Date();
-        const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}:${time.getSeconds().toString().padStart(2, '0')}`;
-
-        logItem.innerHTML = `<span class="glenwich-log-time">[${timeStr}]</span> <span class="glenwich-log-${type}">${message}</span>`;
-        logElement.appendChild(logItem);
-
-        // Auto-scroll to bottom
-        logContainer.scrollTop = logContainer.scrollHeight;
-
-        // Limit log entries
-        while (logElement.children.length > config.maxLogEntries) {
-            logElement.removeChild(logElement.firstChild);
-        }
-    }
-
-    // Toggle auto banker
-    function toggleAutoBanker() {
-        state.isRunning = !state.isRunning;
-
-        if (state.isRunning) {
-            // Start the auto banker
-            toggleButton.innerText = 'Stop Auto Bank';
-            toggleButton.classList.add('active');
-            runStatusIndicator.className = 'glenwich-status-indicator glenwich-status-on';
-            runStatusIndicator.nextSibling.textContent = 'Status: Running';
-
-            // Record start time
-            state.sessionStart = new Date();
-
-            // Start interval
-            state.intervalId = setInterval(() => {
-                // Update run time
-                updateRunTime();
-
-                // Only process inventory if bank is detected and not currently depositing
-                if (state.isBankDetected && !state.depositing) {
-                    processInventory();
-                }
-            }, config.checkInterval);
-
-            addLog('Auto banking started', 'success');
-
-            // Run immediately once
-            if (state.isBankDetected) {
-                processInventory();
-            }
-        } else {
-            // Stop the auto banker
-            toggleButton.innerText = 'Start Auto Bank';
-            toggleButton.classList.remove('active');
-            runStatusIndicator.className = 'glenwich-status-indicator glenwich-status-off';
-            runStatusIndicator.nextSibling.textContent = 'Status: Stopped';
-
-            // Clear interval
-            if (state.intervalId !== null) {
-                clearInterval(state.intervalId);
-                state.intervalId = null;
-            }
-
-            addLog('Auto banking stopped', 'info');
-        }
-    }
-
-    // Update run time display
     function updateRunTime() {
         if (!state.sessionStart) return;
 
-        const now = new Date();
-        const diff = Math.floor((now - state.sessionStart) / 1000);
-        const minutes = Math.floor(diff / 60).toString().padStart(2, '0');
-        const seconds = (diff % 60).toString().padStart(2, '0');
-
-        statsTime.innerText = `${minutes}:${seconds}`;
+        const diff = Math.floor((Date.now() - state.sessionStart) / 1000);
+        const m = String(Math.floor(diff / 60)).padStart(2, '0');
+        const s = String(diff % 60).padStart(2, '0');
+        statTime.textContent = `${m}:${s}`;
     }
 
-    // Check if bank is detected
-    function checkForBank() {
-        // Check for bank teller's counter using multiple methods
-        const wasDetected = state.isBankDetected;
-        let detected = false;
+    function detectBank() {
+        const prev = state.isBankDetected;
 
-        // Method 1: Check for button with "Deposit" text
-        const depositButtons = Array.from(document.querySelectorAll('button')).filter(btn =>
-            btn.textContent && btn.textContent.trim() === 'Deposit'
+        // Method 1: Check for buttons with "Deposit" text
+        const hasDeposit = Array.from(document.querySelectorAll('button')).some(b =>
+            b.textContent.trim() === 'Deposit'
         );
 
-        if (depositButtons.length > 0) {
-            detected = true;
-        }
-
         // Method 2: Check for h2 elements with "Bank Tellers" text
-        if (!detected) {
-            const bankHeadings = Array.from(document.querySelectorAll('h2')).filter(heading =>
-                heading.textContent && heading.textContent.includes('Bank Tellers')
-            );
+        const hasHeading = Array.from(document.querySelectorAll('h2')).some(h =>
+            h.textContent.includes('Bank Tellers')
+        );
 
-            if (bankHeadings.length > 0) {
-                detected = true;
-            }
-        }
+        // Method 3: Check if text in body contains "Bank Tellers"
+        const hasBodyText = document.body.textContent && document.body.textContent.includes('Bank Tellers');
 
-        // Method 3: Check for text in body that indicates bank
-        if (!detected && document.body.textContent && document.body.textContent.includes('Bank Tellers')) {
-            detected = true;
-        }
-
-        // Update state and UI
+        const detected = hasDeposit || hasHeading || hasBodyText;
         state.isBankDetected = detected;
 
-        if (state.isBankDetected) {
-            bankStatusIndicator.className = 'glenwich-status-indicator glenwich-status-on';
-            bankStatusIndicator.nextSibling.textContent = 'Bank: Detected';
+        // Update UI
+        bankIndicator.classList.toggle('on', detected);
+        bankIndicator.classList.toggle('off', !detected);
+        bankLabel.textContent = detected ? 'Bank: Detected' : 'Bank: Not Detected';
 
-            if (!wasDetected) {
-                addLog('Bank detected', 'success');
-            }
-        } else {
-            bankStatusIndicator.className = 'glenwich-status-indicator glenwich-status-off';
-            bankStatusIndicator.nextSibling.textContent = 'Bank: Not Detected';
-
-            if (wasDetected) {
-                addLog('Bank no longer detected', 'error');
-            }
-        }
+        // Log status changes
+        if (detected && !prev) addLog('Bank detected', 'success');
+        if (!detected && prev) addLog('Bank lost', 'error');
     }
 
-    // Main function to process inventory
     function processInventory() {
-        if (state.depositing) return;
+        if (state.depositing || !state.isRunning) return;
 
         addLog('Scanning inventory...', 'info');
 
-        // First, find the inventory container by its heading
-        const inventoryHeadings = Array.from(document.querySelectorAll('h2')).filter(heading =>
-            heading.textContent && heading.textContent.trim() === 'Inventory'
+        // Find the inventory heading
+        const invHeading = Array.from(document.querySelectorAll('h2')).find(h =>
+            h.textContent.trim() === 'Inventory'
         );
 
-        if (!inventoryHeadings.length) {
+        if (!invHeading) {
             addLog('Inventory heading not found', 'error');
             return;
         }
 
-        // Find the container that contains the inventory heading
-        const inventoryHeading = inventoryHeadings[0];
-        const inventoryContainer = findInventoryContainer(inventoryHeading);
+        // Find the container with the inventory
+        let container = invHeading;
+        while (container && !container.classList.contains('rounded-lg'))
+            container = container.parentElement;
 
-        if (!inventoryContainer) {
+        if (!container) {
             addLog('Inventory container not found', 'error');
             return;
         }
 
         addLog('Found inventory container', 'success');
 
-        // Only look for items within the inventory container
-        const inventoryItems = inventoryContainer.querySelectorAll('.w-full.aspect-square.border-2.border-\\[\\#4f3e37\\].rounded');
+        // Find all items within the inventory container
+        const items = container.querySelectorAll('.w-full.aspect-square.border-2.border-\\[\\#4f3e37\\].rounded');
 
-        if (!inventoryItems || inventoryItems.length === 0) {
+        if (!items.length) {
             addLog('No inventory items found', 'error');
             return;
         }
 
-        addLog(`Found ${inventoryItems.length} inventory items`, 'info');
+        addLog(`Found ${items.length} inventory items`, 'info');
 
-        // Find eligible items
-        let eligibleItems = [];
+        // Find eligible items (without stats/requirements)
+        const eligible = [];
 
-        for (const item of inventoryItems) {
-            // First try to get tooltip from hidden div
+        items.forEach(item => {
             const tooltip = item.querySelector('.tooltip');
-            if (!tooltip) continue;
+            if (!tooltip) return;
 
-            // Get tooltip container
             const tooltipContainer = tooltip.querySelector('.tooltipContainer');
-            if (!tooltipContainer) continue;
+            if (!tooltipContainer) return;
 
-            // Check if item is eligible for banking
             if (isItemEligibleForBanking(tooltipContainer)) {
-                // Get item name and quantity
-                const itemInfo = extractItemInfo(tooltipContainer, item);
-
-                eligibleItems.push({
+                eligible.push({
                     element: item,
-                    name: itemInfo.name,
-                    quantity: itemInfo.quantity
+                    ...extractItemInfo(tooltipContainer, item)
                 });
             }
-        }
+        });
 
-        // Process the first eligible item
-        if (eligibleItems.length > 0) {
-            addLog(`Found ${eligibleItems.length} eligible items`, 'success');
-            const item = eligibleItems[0];
+        if (eligible.length) {
+            addLog(`Found ${eligible.length} eligible items`, 'success');
+            const item = eligible[0];
             processItem(item.element, item.name, item.quantity);
         } else {
             addLog('No eligible items found', 'info');
         }
     }
 
-    // Find the inventory container from the heading
-    function findInventoryContainer(inventoryHeading) {
-        // Navigate up to find the containing div
-        let container = inventoryHeading;
+    function isItemEligibleForBanking(tooltipContainer) {
+        if (!tooltipContainer) return false;
 
-        // Go up to find the top-level container with rounded corners
-        while (container && !container.classList.contains('rounded-lg')) {
-            container = container.parentElement;
-            if (!container) return null;
-        }
+        const text = tooltipContainer.textContent || '';
 
-        return container;
+        // Check for lack of stats sections
+        const hasLuckBonuses = text.includes('Luck Bonuses');
+        const hasOffensiveStats = text.includes('Offensive Stats');
+        const hasDefensiveStats = text.includes('Defensive Stats');
+        const hasLevelRequirements = text.includes('Level Requirements');
+
+        // Only select items that don't have any of these sections
+        return !hasLuckBonuses && !hasOffensiveStats && !hasDefensiveStats && !hasLevelRequirements;
     }
 
-    // Extract item info (name and quantity)
     function extractItemInfo(tooltipContainer, itemElement) {
         let name = 'Unknown Item';
         let quantity = 1;
@@ -692,83 +446,8 @@
         return { name, quantity };
     }
 
-    // Check if an item is eligible for banking
-    function isItemEligibleForBanking(tooltipContainer) {
-        if (!tooltipContainer) return false;
-
-        // Get the tooltip text content
-        const text = tooltipContainer.textContent || '';
-
-        // Check for lack of stats sections
-        const hasLuckBonuses = text.includes('Luck Bonuses');
-        const hasOffensiveStats = text.includes('Offensive Stats');
-        const hasDefensiveStats = text.includes('Defensive Stats');
-        const hasLevelRequirements = text.includes('Level Requirements');
-
-        // Only select items that don't have any of these sections
-        return !hasLuckBonuses && !hasOffensiveStats && !hasDefensiveStats && !hasLevelRequirements;
-    }
-
-    // Process an individual item
-    function processItem(item, itemName, itemQuantity) {
-        if (!item || state.depositing) return;
-
-        // Set depositing flag
-        state.depositing = true;
-
-        addLog(`Processing item: ${itemName} (x${itemQuantity})`, 'info');
-
-        // Add a visual indicator that we're clicking this item
-        const originalBorder = item.style.border;
-        item.style.border = '2px solid #ff0000';
-
-        // Click on the item to add it to the bank counter
-        try {
-            item.click();
-
-            // Wait for the item to be added to the bank counter
-            setTimeout(() => {
-                // Remove the visual indicator
-                item.style.border = originalBorder;
-
-                // Find and click the deposit button
-                const depositButton = findDepositButton();
-                if (depositButton && !depositButton.disabled) {
-                    addLog(`Depositing ${itemName} (x${itemQuantity})...`, 'info');
-
-                    // Update stats
-                    state.itemsDeposited++;
-                    state.totalValue += itemQuantity;
-
-                    // Update stats display
-                    statsDeposited.innerText = state.itemsDeposited;
-                    statsValue.innerText = state.totalValue;
-
-                    // Click the deposit button
-                    depositButton.click();
-
-                    // Reset depositing flag after a delay
-                    setTimeout(() => {
-                        addLog(`Successfully deposited ${itemName} (x${itemQuantity})`, 'success');
-                        state.depositing = false;
-                    }, config.actionDelay);
-                } else {
-                    addLog('Deposit button not found or disabled', 'error');
-                    state.depositing = false;
-                }
-            }, config.actionDelay);
-        } catch (error) {
-            // Remove the visual indicator
-            item.style.border = originalBorder;
-
-            addLog(`Error clicking item: ${error.message}`, 'error');
-            state.depositing = false;
-        }
-    }
-
-    // Find the deposit button
     function findDepositButton() {
-        // Simply look for any button with "Deposit" text
+        // Find all buttons and look for one with "Deposit" text
         const buttons = document.querySelectorAll('button');
 
         for (const button of buttons) {
@@ -778,5 +457,73 @@
         }
 
         return null;
+    }
+
+    function processItem(el, name, qty) {
+        if (!el || state.depositing) return;
+
+        state.depositing = true;
+
+        addLog(`Processing item: ${name} (x${qty})`, 'info');
+
+        // Add a visual indicator that we're clicking this item
+        const origBorder = el.style.border;
+        el.style.border = '2px solid red';
+
+        // Click on the item to add it to the bank counter
+        try {
+            el.click();
+
+            // Wait for the item to be added to the bank counter
+            setTimeout(() => {
+                // Remove the visual indicator
+                el.style.border = origBorder;
+
+                // Find and click the deposit button
+                const depositBtn = findDepositButton();
+                if (depositBtn && !depositBtn.disabled) {
+                    addLog(`Depositing ${name} (x${qty})...`, 'info');
+
+                    // Update stats
+                    state.itemsDeposited++;
+                    statItems.textContent = state.itemsDeposited;
+                    state.totalValue += qty;
+                    statValue.textContent = state.totalValue;
+
+                    // Click the deposit button
+                    depositBtn.click();
+
+                    // Reset depositing flag after a delay
+                    setTimeout(() => {
+                        addLog(`Successfully deposited ${name} (x${qty})`, 'success');
+                        state.depositing = false;
+                    }, config.actionDelay);
+                } else {
+                    addLog('Deposit button not found or disabled', 'error');
+                    state.depositing = false;
+                }
+            }, config.actionDelay);
+        } catch (error) {
+            // Remove the visual indicator
+            el.style.border = origBorder;
+
+            addLog(`Error clicking item: ${error.message}`, 'error');
+            state.depositing = false;
+        }
+    }
+
+    function addLog(msg, type='info') {
+        const li = document.createElement('li');
+        const now = new Date();
+        const ts = `[${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}]`;
+        li.innerHTML = `<span class="log-time">${ts}</span> <span class="log-${type}">${msg}</span>`;
+        logList.appendChild(li);
+
+        // Limit log entries
+        while (logList.children.length > config.maxLogEntries)
+            logList.removeChild(logList.firstChild);
+
+        // Auto-scroll to bottom
+        logContainer.scrollTop = logContainer.scrollHeight;
     }
 })();
