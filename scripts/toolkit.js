@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Glenwich Unified Toolkit
 // @namespace    https://github.com/DarthFeanor/glenwich-scripts
-// @version      1.0
+// @version      1.1
 // @description  Combined toolkit with Auto Bank, Navigator, XP Tracker and Dungeon Re-enter
 // @author       Txdxrxv
 // @match        https://*.glenwich.com/*
@@ -998,6 +998,10 @@
             statusValue: document.getElementById('tk-nav-status')
         };
 
+        // Create a set of valid locations from default data
+        const defaultLocations = getDefaultNavData().locations;
+        const validLocations = new Set(Object.keys(defaultLocations));
+
         // Direction paths for detecting movement buttons
         const directionPaths = {
             north: 'm18 15-6-6-6 6',
@@ -1024,11 +1028,45 @@
         loadNavData();
         if (!Object.keys(navState.locationData.locations).length) {
             initDefaultNavData();
+        } else {
+            // Clean up any invalid locations from saved data
+            cleanupInvalidLocations();
         }
 
         // Start updating
         updateNav();
         navState.widgetInterval = setInterval(updateNav, TOOLKIT.config.nav.checkInterval);
+
+        // Clean up any invalid locations from the saved data
+        function cleanupInvalidLocations() {
+            const locations = navState.locationData.locations;
+            const connections = navState.locationData.connections;
+
+            // Remove invalid locations
+            Object.keys(locations).forEach(loc => {
+                if (!validLocations.has(loc)) {
+                    delete locations[loc];
+                }
+            });
+
+            // Remove invalid connections
+            Object.keys(connections).forEach(loc => {
+                if (!validLocations.has(loc)) {
+                    delete connections[loc];
+                } else {
+                    // Check each direction
+                    Object.keys(connections[loc]).forEach(dir => {
+                        const targetLoc = connections[loc][dir];
+                        if (!validLocations.has(targetLoc)) {
+                            delete connections[loc][dir];
+                        }
+                    });
+                }
+            });
+
+            // Save cleaned data
+            saveNavData();
+        }
 
         function manualNav(dir) {
             navState.lastDirection = dir;
@@ -1059,20 +1097,28 @@
                 if (/roll the dice/i.test(txt)) continue;
                 if (!txt || /last played\s.*ago/i.test(txt)) continue;
 
-                if (navState.locationData.current && navState.locationData.current !== txt) {
-                    recordConnection(navState.locationData.current, txt);
-                }
+                // Only record current location if it's a valid location from default set
+                if (validLocations.has(txt)) {
+                    if (navState.locationData.current && navState.locationData.current !== txt) {
+                        recordConnection(navState.locationData.current, txt);
+                    }
 
-                navState.locationData.current = txt;
-                if (!navState.locationData.locations[txt]) {
-                    navState.locationData.locations[txt] = 1;
-                    saveNavData();
-                }
+                    navState.locationData.current = txt;
 
-                TOOLKIT.dom.nav.location.textContent = txt;
+                    // Only update locations if it's in the valid set
+                    if (!navState.locationData.locations[txt]) {
+                        navState.locationData.locations[txt] = 1;
+                        saveNavData();
+                    }
 
-                if (navState.autoNavigating && txt === navState.navDestination) {
-                    stopAutoNav();
+                    TOOLKIT.dom.nav.location.textContent = txt;
+
+                    if (navState.autoNavigating && txt === navState.navDestination) {
+                        stopAutoNav();
+                    }
+                } else {
+                    // For non-valid locations, still display but don't save
+                    TOOLKIT.dom.nav.location.textContent = txt;
                 }
 
                 return;
@@ -1083,6 +1129,12 @@
 
         function recordConnection(from, to) {
             if (!navState.lastDirection) return;
+
+            // Only record connections between valid locations
+            if (!validLocations.has(from) || !validLocations.has(to)) {
+                navState.lastDirection = '';
+                return;
+            }
 
             const rev = { north: 'south', south: 'north', east: 'west', west: 'east' };
 
@@ -1126,9 +1178,9 @@
             placeholder.selected = true;
             select.add(placeholder);
 
-            // Add location options
+            // Add location options - only include valid locations
             Object.keys(navState.locationData.locations)
-                .filter(loc => loc && loc !== navState.locationData.current)
+                .filter(loc => loc && loc !== navState.locationData.current && validLocations.has(loc))
                 .sort()
                 .forEach(loc => {
                     select.add(new Option(loc, loc));
@@ -1167,6 +1219,9 @@
 
                 for (const dir in connections) {
                     const nextLoc = connections[dir];
+
+                    // Skip invalid locations in pathfinding
+                    if (!validLocations.has(nextLoc)) continue;
 
                     if (seen[nextLoc]) continue;
 
@@ -1239,16 +1294,19 @@
         }
     }
 
-    // Initialize default navigation data
-    function initDefaultNavData() {
-        const defaultData = {
+    // Return default navigation data
+    function getDefaultNavData() {
+        return {
             locations: {"al pisheh":1,"glenwich":1,"plaistow":1,"ashenmere":1,"dunwyke cliffs":1,"dunwyke":1,"fractured abyss":1,"east plaistow":1,"south plaistow":1,"draymoor fields":1,"stonecross":1,"draymoor":1,"qaz hollow":1,"lostmere":1,"riverford":1,"south glenwich":1,"kilcarnen wood":1},
             connections: {"glenwich":{"east":"plaistow","south":"south glenwich"},"plaistow":{"west":"glenwich","east":"east plaistow","south":"south plaistow"},"ashenmere":{"west":"east plaistow","east":"dunwyke","south":"riverford"},"dunwyke cliffs":{"west":"dunwyke"},"dunwyke":{"east":"dunwyke cliffs","south":"fractured abyss","west":"ashenmere"},"fractured abyss":{"north":"dunwyke","west":"riverford"},"east plaistow":{"east":"ashenmere","south":"kilcarnen wood","west":"plaistow"},"south plaistow":{"north":"plaistow","south":"draymoor fields","west":"south glenwich","east":"kilcarnen wood"},"draymoor fields":{"north":"south plaistow","east":"stonecross","west":"draymoor"},"stonecross":{"west":"draymoor fields","north":"kilcarnen wood"},"draymoor":{"north":"south glenwich","east":"draymoor fields","south":"lostmere"},"qaz hollow":{"north":"lostmere","south":"al pisheh"},"al pisheh":{"north":"qaz hollow"},"lostmere":{"north":"draymoor","south":"qaz hollow"},"riverford":{"west":"kilcarnen wood","north":"ashenmere","east":"fractured abyss"},"south glenwich":{"north":"glenwich","east":"south plaistow","south":"draymoor"},"kilcarnen wood":{"north":"east plaistow","south":"stonecross","east":"riverford","west":"south plaistow"}}
         };
+    }
 
+    // Initialize default navigation data
+    function initDefaultNavData() {
         TOOLKIT.state.nav.locationData = {
             current: 'glenwich',
-            ...defaultData
+            ...getDefaultNavData()
         };
 
         saveNavData();
