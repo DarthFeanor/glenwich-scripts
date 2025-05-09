@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Glenwich Unified Toolkit
 // @namespace    https://github.com/DarthFeanor/glenwich-scripts
-// @version      1.1
+// @version      1.2
 // @description  Combined toolkit with Auto Bank, Navigator, XP Tracker and Dungeon Re-enter
 // @author       Txdxrxv
 // @match        https://*.glenwich.com/*
@@ -16,14 +16,15 @@
 
     // ============= UNIFIED CONFIG AND STATE =============
     const TOOLKIT = {
-        version: '1.0',
+        version: '1.1',
         config: {
             // Bank module config
             bank: {
                 checkInterval: 1500,
                 actionDelay: 800,
                 maxLogEntries: 50,
-                initDelay: 1000
+                initDelay: 1000,
+                maxConsecutiveEmptyScans: 3 // New config: max number of consecutive empty scans before stopping
             },
             // Navigation module config
             nav: {
@@ -50,7 +51,8 @@
                 totalValue: 0,
                 depositing: false,
                 sessionStart: null,
-                intervalId: null
+                intervalId: null,
+                emptyScansCount: 0 // New state: count consecutive empty scans
             },
             // Navigator state
             nav: {
@@ -658,6 +660,8 @@
         const dom = TOOLKIT.dom.bank;
 
         bankState.isRunning = true;
+        bankState.emptyScansCount = 0; // Reset empty scans counter when starting
+
         dom.toggleBtn.classList.add('tk-active');
         dom.toggleBtn.textContent = 'Stop';
         dom.runIndicator.classList.replace('tk-off', 'tk-on');
@@ -798,11 +802,23 @@
         });
 
         if (eligible.length) {
+            // Reset the empty scans counter when we find eligible items
+            bankState.emptyScansCount = 0;
+
             bankAddLog(`Found ${eligible.length} eligible items`, 'success');
             const item = eligible[0];
             processItem(item.element, item.name, item.quantity);
         } else {
-            bankAddLog('No eligible items found', 'info');
+            // Increment empty scans counter
+            bankState.emptyScansCount++;
+
+            // Check if we've hit the maximum number of consecutive empty scans
+            if (bankState.emptyScansCount >= TOOLKIT.config.bank.maxConsecutiveEmptyScans) {
+                bankAddLog('No bankable items found in multiple scans. Auto-stopping.', 'info');
+                stopBankAuto();
+            } else {
+                bankAddLog(`No eligible items found (scan ${bankState.emptyScansCount}/${TOOLKIT.config.bank.maxConsecutiveEmptyScans})`, 'info');
+            }
         }
     }
 
