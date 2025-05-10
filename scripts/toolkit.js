@@ -4,7 +4,7 @@
 // @version      1.1
 // @description  Combined toolkit with Auto Bank, Navigator, XP Tracker and Dungeon Re-enter
 // @author       Txdxrxv
-// @match        https://*.glenwich.com/*
+// @exclude      https://wiki.glenwich.com/*
 // @match        https://glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
 // @grant        none
