@@ -5,7 +5,7 @@
 // @description  Navigation widget with auto-nav, persistent map data, styled like other Glenwich utilities
 // @author       Txdxrxv
 // @match        https://glenwich.com/*
-// @match        https://*.glenwich.com/*
+// @exclude      https://wiki.glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
 // @grant        none
 // @run-at       document-idle
