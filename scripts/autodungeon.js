@@ -4,7 +4,6 @@
 // @version      1.6
 // @description  Auto re-enters dungeon after death, with styled UI and detailed stats
 // @author       Txdxrxv
-// @match        https://*.glenwich.com/*
 // @match        https://glenwich.com/*
 // @exclude      https://wiki.glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
