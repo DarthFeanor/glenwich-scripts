@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Glenwich Unified Toolkit
 // @namespace    https://github.com/DarthFeanor/glenwich-scripts
-// @version      1.2
+// @version      1.1
 // @description  Combined toolkit with Auto Bank, Navigator, XP Tracker and Dungeon Re-enter
 // @author       Txdxrxv
 // @match        https://*.glenwich.com/*
@@ -1334,7 +1334,7 @@
         const xpState = TOOLKIT.state.xp;
         const container = document.getElementById('tk-xp-content');
 
-        // Create XP tracker module UI
+        // Create XP tracker module UI with reset button
         container.innerHTML = `
             <div class="tk-info">Hover over skills to see experience tracking data.</div>
             <div id="tk-xp-content-inner">
@@ -1342,13 +1342,15 @@
             </div>
             <div class="tk-controls">
                 <button class="tk-btn" id="tk-xp-refresh">Refresh</button>
+                <button class="tk-btn" id="tk-xp-reset">Reset</button>
             </div>
         `;
 
         // Store DOM references
         TOOLKIT.dom.xp = {
             content: document.getElementById('tk-xp-content-inner'),
-            refreshBtn: document.getElementById('tk-xp-refresh')
+            refreshBtn: document.getElementById('tk-xp-refresh'),
+            resetBtn: document.getElementById('tk-xp-reset')
         };
 
         // Add event listeners
@@ -1356,6 +1358,9 @@
             updateXPData();
             updateXPDisplay();
         });
+
+        // Add event listener for reset button
+        TOOLKIT.dom.xp.resetBtn.addEventListener('click', resetXPData);
 
         // Scan initial data
         scanInitialXPData();
@@ -1394,7 +1399,10 @@
 
             xpState.skillData[name] = {
                 name,
-                level: level,
+                level: level.text,
+                numericLevel: level.value,
+                initialLevel: level.value, // Store initial numeric level
+                levelsGained: 0, // Initialize levels gained
                 initialExp: data.totalExp,
                 expToLevel: data.expToLevel,
                 latestExp: data.totalExp,
@@ -1421,6 +1429,16 @@
             const name = getSkillName(tooltip);
             const skill = xpState.skillData[name];
             if (!skill) return;
+
+            // Update level data
+            const currentLevel = getSkillLevel(tooltip);
+            // Update skill level if changed
+            if (currentLevel.text !== skill.level) {
+                skill.level = currentLevel.text;
+                skill.numericLevel = currentLevel.value;
+                // Calculate levels gained
+                skill.levelsGained = currentLevel.value - skill.initialLevel;
+            }
 
             const content = tooltip.querySelector('.tooltip-content');
             const data = parseXPData(content);
@@ -1491,8 +1509,9 @@
 
             const header = document.createElement('div');
             header.className = 'tk-skill-title';
+            // Add level gain indicator if levels gained > 0
             header.innerHTML = `
-                <span>${skill.name} ${skill.level}</span>
+                <span>${skill.name} ${skill.level}${skill.levelsGained > 0 ? ` <span style="color:#7fff7f">(+${skill.levelsGained})</span>` : ''}</span>
                 <span>+${(skill.latestExp - skill.initialExp).toLocaleString()}xp</span>
             `;
 
@@ -1525,6 +1544,22 @@
         }
     }
 
+    function resetXPData() {
+        const xpState = TOOLKIT.state.xp;
+
+        // Clear all skill data
+        xpState.skillData = {};
+
+        // Re-scan for initial data
+        scanInitialXPData();
+
+        // Update the display
+        updateXPDisplay();
+
+        // Log the reset
+        console.log('[Glenwich Toolkit] XP tracking data reset');
+    }
+
     function setupXPObserver() {
         const xpState = TOOLKIT.state.xp;
 
@@ -1549,7 +1584,17 @@
 
     function getSkillLevel(tooltip) {
         const levelEl = tooltip.querySelector('.font-mono');
-        return levelEl ? levelEl.textContent.trim() : '0/0';
+        if (!levelEl) return { text: '0/0', value: 0 };
+
+        const levelText = levelEl.textContent.trim();
+        // Parse the numeric level (e.g. from format "5/99" extract 5)
+        const levelMatch = levelText.match(/^(\d+)/);
+        const numericLevel = levelMatch ? parseInt(levelMatch[1], 10) : 0;
+
+        return {
+            text: levelText,
+            value: numericLevel
+        };
     }
 
     function parseXPData(element) {
