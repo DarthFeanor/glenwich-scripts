@@ -4,7 +4,7 @@
 // @version      1.5
 // @description  Tracks XP gain rates and estimates time until next level, with hourly avg and remaining XP (thousands separated)
 // @author       Txdxrxv
-// @match        https://*.glenwich.com/*
+// @exclude      https://wiki.glenwich.com/*
 // @match        https://glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
 // @grant        none
