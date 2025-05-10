@@ -6,6 +6,7 @@
 // @author       Txdxrxv
 // @match        *://glenwich.com/*
 // @match        *://*.glenwich.com/*
+// @exclude      https://wiki.glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
 // @grant        none
 // @run-at       document-idle
