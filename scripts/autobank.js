@@ -5,7 +5,6 @@
 // @description  Automatically bank items without Luck Bonuses, Offensive Stats, Defensive Stats, or Level Requirements with styled widget
 // @author       Txdxrxv
 // @match        *://glenwich.com/*
-// @match        *://*.glenwich.com/*
 // @exclude      https://wiki.glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
 // @grant        none
