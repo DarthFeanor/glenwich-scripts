@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name         Glenwich Unified Toolkit
+// @name         Glenwich Ultimate Toolkit
 // @namespace    https://github.com/DarthFeanor/glenwich-scripts
-// @version      1.1
-// @description  Combined toolkit with Auto Bank, Navigator, XP Tracker and Dungeon Re-enter
+// @version      10.0
+// @description  Ultimate toolkit for Glenwich - Exchange, Bank, Navigation, XP Tracking, and Dungeon Auto-Reenter
 // @author       Txdxrxv
-// @exclude      https://wiki.glenwich.com/*
 // @match        https://glenwich.com/*
+// @exclude      https://wiki.glenwich.com/*
 // @icon         https://glenwich.com/favicon.png
 // @grant        none
 // @run-at       document-idle
@@ -16,15 +16,19 @@
 
     // ============= UNIFIED CONFIG AND STATE =============
     const TOOLKIT = {
-        version: '1.1',
+        version: '10.0',
         config: {
+            // Exchange module config
+            exchange: {
+                checkInterval: 500
+            },
             // Bank module config
             bank: {
                 checkInterval: 1500,
                 actionDelay: 800,
                 maxLogEntries: 50,
                 initDelay: 1000,
-                maxConsecutiveEmptyScans: 3 // New config: max number of consecutive empty scans before stopping
+                maxConsecutiveEmptyScans: 3
             },
             // Navigation module config
             nav: {
@@ -41,8 +45,14 @@
             }
         },
         state: {
-            activeTab: 'bank',
+            activeTab: 'exchange',
             isMinimized: false,
+            // Exchange state
+            exchange: {
+                isProcessing: false,
+                shouldCancel: false,
+                sensorState: 'idle'
+            },
             // Bank state
             bank: {
                 isRunning: false,
@@ -52,7 +62,7 @@
                 depositing: false,
                 sessionStart: null,
                 intervalId: null,
-                emptyScansCount: 0 // New state: count consecutive empty scans
+                emptyScansCount: 0
             },
             // Navigator state
             nav: {
@@ -82,12 +92,10 @@
     };
 
     // ============= INIT SEQUENCE =============
-
     // Main initialization
     function initToolkit() {
         injectStyles();
         createWidget();
-
         // Initialize modules when game is ready
         checkGameReady();
     }
@@ -98,23 +106,23 @@
             if (document.querySelector('.tooltip')) {
                 clearInterval(readyCheck);
                 console.log('[Glenwich Toolkit] Game ready, initializing modules...');
-
                 // Initialize all modules
+                initExchangeModule();
                 initBankModule();
                 initNavModule();
                 initXPModule();
                 initDungeonModule();
-
                 // Show active tab
                 showTab(TOOLKIT.state.activeTab);
-
-                // Add keyboard shortcut for the toolkit (Alt+T)
+                // Add keyboard shortcuts (Alt+T for toolkit, Alt+E for Exchange tab)
                 document.addEventListener('keydown', e => {
                     if (e.altKey && e.key.toLowerCase() === 't') {
                         toggleWidget();
+                    } else if (e.altKey && e.key.toLowerCase() === 'e') {
+                        TOOLKIT.dom.widget.style.display = 'block';
+                        showTab('exchange');
                     }
                 });
-
                 console.log('[Glenwich Toolkit] All modules initialized!');
             }
         }, 500);
@@ -126,45 +134,38 @@
     }
 
     // ============= WIDGET UI =============
-
     // Create the unified toolkit widget
     function createWidget() {
         // Main widget container
         const widget = document.createElement('div');
         widget.id = 'glenwich-toolkit';
-
         // Create header
         const header = document.createElement('div');
         header.className = 'tk-header';
-
         // Title container with main title and subtitle
         const titleContainer = document.createElement('div');
         titleContainer.className = 'tk-title-container';
-
         const title = document.createElement('div');
         title.className = 'tk-title';
         title.textContent = `Glenwich Toolkit v${TOOLKIT.version}`;
-
         const subtitle = document.createElement('div');
         subtitle.className = 'tk-subtitle';
         subtitle.textContent = 'powered by Gods';
-
         titleContainer.append(title, subtitle);
 
         const minBtn = document.createElement('button');
         minBtn.className = 'tk-minimize-btn';
         minBtn.textContent = TOOLKIT.state.isMinimized ? '+' : '−';
         minBtn.addEventListener('click', toggleMinimize);
-
         header.append(titleContainer, minBtn);
         widget.append(header);
 
         // Create tab bar
         const tabBar = document.createElement('div');
         tabBar.className = 'tk-tabs';
-
-        // Add tab buttons
+        // Add tab buttons - added Exchange as the first tab
         const tabs = [
+            { id: 'exchange', label: 'Exchange' },
             { id: 'bank', label: 'Bank' },
             { id: 'nav', label: 'Nav' },
             { id: 'xp', label: 'XP' },
@@ -181,13 +182,11 @@
             });
             tabBar.append(tabBtn);
         });
-
         widget.append(tabBar);
 
         // Create content area
         const content = document.createElement('div');
         content.className = 'tk-content';
-
         // Create content containers for each module
         tabs.forEach(tab => {
             const tabContent = document.createElement('div');
@@ -195,35 +194,29 @@
             tabContent.id = `tk-${tab.id}-content`;
             content.append(tabContent);
         });
-
         widget.append(content);
 
         // Create footer
         const footer = document.createElement('div');
         footer.className = 'tk-footer';
-
         const footerContent = document.createElement('div');
         footerContent.className = 'tk-footer-content';
-
         // Add attribution text
         const attribution = document.createElement('div');
         attribution.className = 'tk-attribution';
         attribution.textContent = 'made by the "Gods" Guild';
-
         const closeBtn = document.createElement('button');
         closeBtn.className = 'tk-btn';
         closeBtn.textContent = 'Close';
         closeBtn.addEventListener('click', () => {
             widget.style.display = 'none';
         });
-
         footerContent.append(attribution, closeBtn);
         footer.append(footerContent);
         widget.append(footer);
 
         // Make widget draggable
         makeDraggable(widget, header);
-
         // Add widget to document
         document.body.appendChild(widget);
 
@@ -244,7 +237,6 @@
     // Show specific tab
     function showTab(tabId) {
         TOOLKIT.state.activeTab = tabId;
-
         // Update tab buttons
         TOOLKIT.dom.tabBtns.forEach(btn => {
             if (btn.getAttribute('data-tab') === tabId) {
@@ -253,7 +245,6 @@
                 btn.classList.remove('tk-active');
             }
         });
-
         // Update tab content visibility
         TOOLKIT.dom.tabContents.forEach(content => {
             if (content.id === `tk-${tabId}-content`) {
@@ -267,7 +258,6 @@
     // Make an element draggable
     function makeDraggable(el, handle) {
         let dragging = false, startX=0, startY=0, offsetX=0, offsetY=0;
-
         handle.addEventListener('mousedown', e => {
             e.preventDefault();
             dragging = true;
@@ -291,8 +281,12 @@
         }
     }
 
-    // ============= STYLES =============
+    // Sleep utility function
+    function sleep(ms) {
+        return new Promise(res=>setTimeout(res, ms));
+    }
 
+    // ============= STYLES =============
     // Inject unified stylesheet for the toolkit
     function injectStyles() {
         const css = `
@@ -301,7 +295,7 @@
                 position: fixed;
                 top: 10px;
                 right: 10px;
-                width: 260px;
+                width: 270px;
                 background: rgba(43,20,14,0.95);
                 border: 2px solid #ffb83f;
                 color: #ffb83f;
@@ -374,7 +368,7 @@
                 font-weight: bold;
             }
             .tk-content {
-                max-height: 300px;
+                max-height: 350px;
                 overflow-y: auto;
             }
             .tk-tab-content {
@@ -428,7 +422,10 @@
             .tk-btn:hover {
                 background: #3d1e14;
             }
-
+            .tk-btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
             /* Shared Component Styles */
             .tk-status-row {
                 display: flex;
@@ -444,6 +441,7 @@
             }
             .tk-on { background: #7fff7f; }
             .tk-off { background: #ff7f7f; }
+            .tk-processing { background: #ffff7f; }
             .tk-controls {
                 display: flex;
                 gap: 6px;
@@ -502,8 +500,28 @@
             .tk-log-success { color: #7fff7f; }
             .tk-log-error { color: #ff7f7f; }
 
-            /* Bank Module Styles */
-            /* Already covered by shared styles */
+            /* Exchange Module Styles */
+            .tk-input-row {
+                display: flex;
+                flex-direction: column;
+                margin-bottom: 8px;
+            }
+            .tk-input-row label {
+                margin-bottom: 3px;
+            }
+            .tk-input-row input {
+                background: #241008;
+                border: 1px solid #ffb83f;
+                color: #ffb83f;
+                padding: 4px;
+                border-radius: 3px;
+                width: 100%;
+            }
+            .tk-btn-group {
+                display: flex;
+                gap: 5px;
+                margin-top: 5px;
+            }
 
             /* Navigator Module Styles */
             .tk-nav-location {
@@ -556,26 +574,389 @@
                 font-size: 11px;
                 margin-bottom: 2px;
             }
-
-            /* Dungeon Module Styles */
-            /* Already covered by shared styles */
         `;
-
         const styleEl = document.createElement('style');
         styleEl.textContent = css;
         document.head.appendChild(styleEl);
     }
 
-    // ============= BANK MODULE =============
+    // ============= EXCHANGE MODULE =============
+    function initExchangeModule() {
+        const exchangeState = TOOLKIT.state.exchange;
+        const container = document.getElementById('tk-exchange-content');
 
+        // Create exchange module UI
+        container.innerHTML = `
+            <div class="tk-info">Automate exchange operations with quantity and price control.</div>
+            <!-- Status row -->
+            <div class="tk-status-row">
+                <span class="tk-indicator tk-off" id="tk-exchange-sensor"></span>
+                <span id="tk-exchange-status">Ready</span>
+            </div>
+            <!-- Inputs -->
+            <div class="tk-input-row">
+                <label for="tk-exchange-quantity">Quantity:</label>
+                <input type="number" id="tk-exchange-quantity" min="1" value="100">
+            </div>
+            <div class="tk-input-row">
+                <label for="tk-exchange-price">Price per Item (gp):</label>
+                <input type="number" id="tk-exchange-price" min="1" value="5">
+            </div>
+            <!-- Action buttons -->
+            <div class="tk-btn-group">
+                <button class="tk-btn" id="tk-exchange-quantity-btn">Apply Quantity</button>
+                <button class="tk-btn" id="tk-exchange-price-btn">Apply Price</button>
+            </div>
+            <div class="tk-btn-group">
+                <button class="tk-btn" id="tk-exchange-buy-btn">Buy</button>
+                <button class="tk-btn" id="tk-exchange-sell-btn">Sell</button>
+            </div>
+            <!-- Log -->
+            <div class="tk-log-container" id="tk-exchange-log-container">
+                <ul class="tk-log-list" id="tk-exchange-log-list"></ul>
+            </div>
+            <!-- Controls -->
+            <div class="tk-controls">
+                <button class="tk-btn" id="tk-exchange-reset">Reset</button>
+            </div>
+        `;
+
+        // Store DOM references
+        TOOLKIT.dom.exchange = {
+            sensor: document.getElementById('tk-exchange-sensor'),
+            status: document.getElementById('tk-exchange-status'),
+            quantityInput: document.getElementById('tk-exchange-quantity'),
+            priceInput: document.getElementById('tk-exchange-price'),
+            quantityBtn: document.getElementById('tk-exchange-quantity-btn'),
+            priceBtn: document.getElementById('tk-exchange-price-btn'),
+            buyBtn: document.getElementById('tk-exchange-buy-btn'),
+            sellBtn: document.getElementById('tk-exchange-sell-btn'),
+            resetBtn: document.getElementById('tk-exchange-reset'),
+            logContainer: document.getElementById('tk-exchange-log-container'),
+            logList: document.getElementById('tk-exchange-log-list')
+        };
+
+        // Add event listeners
+        TOOLKIT.dom.exchange.quantityBtn.addEventListener('click', () => {
+            if (!exchangeState.isProcessing) applyQuantity();
+        });
+
+        TOOLKIT.dom.exchange.priceBtn.addEventListener('click', () => {
+            if (!exchangeState.isProcessing) applyPrice();
+        });
+
+        TOOLKIT.dom.exchange.buyBtn.addEventListener('click', () => {
+            if (!exchangeState.isProcessing) executeTrade('Buy');
+        });
+
+        TOOLKIT.dom.exchange.sellBtn.addEventListener('click', () => {
+            if (!exchangeState.isProcessing) executeTrade('Sell');
+        });
+
+        TOOLKIT.dom.exchange.resetBtn.addEventListener('click', resetExchangeValues);
+
+        // Initial log
+        exchangeLog('Exchange module initialized', 'info');
+    }
+
+    // Exchange module functions
+    function exchangeLog(msg, type='info') {
+        const logEl = TOOLKIT.dom.exchange.logList;
+        const time = new Date().toLocaleTimeString();
+        const li = document.createElement('li');
+        li.innerHTML = `<span class="tk-log-time">${time}</span> <span class="tk-log-${type}">${msg}</span>`;
+        logEl.appendChild(li);
+
+        // Limit log entries
+        while (logEl.children.length > 50) {
+            logEl.removeChild(logEl.firstChild);
+        }
+
+        // Auto-scroll to bottom
+        TOOLKIT.dom.exchange.logContainer.scrollTop = TOOLKIT.dom.exchange.logContainer.scrollHeight;
+        console.log(`[Exchange] ${msg}`);
+    }
+
+    function updateExchangeStatus(status) {
+        const exchangeState = TOOLKIT.state.exchange;
+        const statusEl = TOOLKIT.dom.exchange.status;
+        const sensorEl = TOOLKIT.dom.exchange.sensor;
+
+        if (statusEl) statusEl.textContent = status;
+
+        if (sensorEl) {
+            if (status.includes('Success')) {
+                sensorEl.className = 'tk-indicator tk-on';
+                exchangeState.sensorState = 'success';
+            } else if (status.includes('Error')) {
+                sensorEl.className = 'tk-indicator tk-off';
+                exchangeState.sensorState = 'error';
+            } else if (status.includes('Processing')) {
+                sensorEl.className = 'tk-indicator tk-processing';
+                exchangeState.sensorState = 'processing';
+            } else {
+                sensorEl.className = 'tk-indicator';
+                exchangeState.sensorState = 'idle';
+            }
+        }
+
+        exchangeLog(status);
+    }
+
+    function resetExchangeValues() {
+        const exchangeState = TOOLKIT.state.exchange;
+        exchangeState.shouldCancel = true;
+
+        TOOLKIT.dom.exchange.quantityInput.value = '100';
+        TOOLKIT.dom.exchange.priceInput.value = '5';
+
+        updateExchangeStatus('Cancelled: values reset');
+
+        setTimeout(() => {
+            exchangeState.isProcessing = false;
+            exchangeState.shouldCancel = false;
+            updateExchangeStatus('Ready');
+        }, 300);
+    }
+
+    function getCurrentQuantity() {
+        try {
+            const spans = document.querySelectorAll('span.font-bold.text-\\[\\#d4af37\\]');
+            for(const s of spans) {
+                const p = s.previousElementSibling;
+                if(p && p.textContent.includes('Quantity:')) {
+                    return parseInt(s.textContent.replace(/,/g,''))||0;
+                }
+            }
+
+            const el = document.evaluate(
+                "//span[contains(text(),'Quantity:')]/following-sibling::span",
+                document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            ).singleNodeValue;
+
+            return el ? parseInt(el.textContent.replace(/,/g,''))||0 : 0;
+        } catch {
+            return 0;
+        }
+    }
+
+    function getCurrentPrice() {
+        try {
+            const spans = document.querySelectorAll('span.font-bold.text-\\[\\#d4af37\\]');
+            for(const s of spans) {
+                const p = s.previousElementSibling;
+                if(p && p.textContent.includes('Price per Item:')) {
+                    return parseInt(s.textContent.split(' ')[0])||0;
+                }
+            }
+
+            const el = document.evaluate(
+                "//span[contains(text(),'Price per Item:')]/following-sibling::span",
+                document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            ).singleNodeValue;
+
+            return el ? parseInt(el.textContent.split(' ')[0])||0 : 0;
+        } catch {
+            return 0;
+        }
+    }
+
+    function findExactButton(text) {
+        return Array.from(document.querySelectorAll('button')).find(b =>
+            b.textContent.trim() === text
+        ) || null;
+    }
+
+    // Live-tracking + optimal applyQuantity
+    async function applyQuantity() {
+        const exchangeState = TOOLKIT.state.exchange;
+        exchangeState.isProcessing = true;
+        exchangeState.shouldCancel = false;
+
+        const input = TOOLKIT.dom.exchange.quantityInput;
+        const target = parseInt(input.value, 10) || 0;
+
+        updateExchangeStatus(`Processing: Live-adjusting to ${target}...`);
+
+        const denomNames = ['1K','100','10','5','1'];
+        const plusBtn = findExactButton('+');
+        const minusBtn = findExactButton('-');
+
+        while(!exchangeState.shouldCancel) {
+            const current = getCurrentQuantity();
+            const diff = target - current;
+
+            if(diff === 0) break;
+
+            updateExchangeStatus(`Current: ${current}, Target: ${target}`);
+
+            const absDiff = Math.abs(diff);
+            const actionBtn = diff > 0 ? plusBtn : minusBtn;
+
+            // choose denom closest to remaining diff (under or over)
+            const candidates = denomNames.map(name => {
+                const btn = findExactButton(name);
+                const val = name === '1K' ? 1000 : parseInt(name, 10);
+                return btn ? { name, val, btn } : null;
+            }).filter(d => d);
+
+            const chosen = candidates.sort((a, b) =>
+                Math.abs(absDiff - a.val) - Math.abs(absDiff - b.val)
+            )[0];
+
+            if(!chosen) {
+                actionBtn.click();
+                await sleep(100);
+                continue;
+            }
+
+            exchangeLog(`Setting denom: ${chosen.name}`);
+            chosen.btn.click();
+            await sleep(100);
+
+            exchangeLog(`Stepping ${diff > 0 ? '+' : '-'}${chosen.val}`);
+            actionBtn.click();
+            await sleep(100);
+        }
+
+        if(!exchangeState.shouldCancel) {
+            updateExchangeStatus(`Success: Reached ${getCurrentQuantity()}`);
+        } else {
+            updateExchangeStatus('Cancelled');
+        }
+
+        exchangeState.isProcessing = false;
+        exchangeState.shouldCancel = false;
+    }
+
+    // Price adjustment helper function
+    function clickButtonMultipleTimes(button, count, cb, batchSize=3, delay=100) {
+        const exchangeState = TOOLKIT.state.exchange;
+        if(count <= 0 || exchangeState.shouldCancel) {
+            if(cb) cb();
+            return;
+        }
+
+        const clicks = Math.min(batchSize, count);
+        let done = 0;
+
+        function batch() {
+            if(exchangeState.shouldCancel) return;
+
+            if(done >= clicks) {
+                setTimeout(() => {
+                    done = 0;
+                    clickButtonMultipleTimes(button, count - clicks, cb, batchSize, delay);
+                }, 200);
+                return;
+            }
+
+            button.click();
+            done++;
+            setTimeout(batch, delay);
+        }
+
+        batch();
+    }
+
+    // Price adjustment function
+    function applyPrice() {
+        const exchangeState = TOOLKIT.state.exchange;
+        if(exchangeState.isProcessing) return;
+
+        exchangeState.isProcessing = true;
+        exchangeState.shouldCancel = false;
+
+        const target = parseInt(TOOLKIT.dom.exchange.priceInput.value, 10) || 0;
+        const current = getCurrentPrice();
+
+        updateExchangeStatus(`Processing: Setting price ${current}→${target}...`);
+
+        const inc = findExactButton('+ 10%');
+        const dec = findExactButton('- 10%');
+
+        if(!inc || !dec) {
+            updateExchangeStatus('Error: Price buttons missing');
+            exchangeState.isProcessing = false;
+            return;
+        }
+
+        const diff = Math.abs(target - current);
+        const isUp = target > current;
+
+        if(diff > 50) {
+            const est = Math.ceil(
+                Math.log((isUp ? target/current : current/target)) / Math.log(1.1)
+            );
+            const start = Math.max(1, Math.floor(est * 0.7));
+            clickButtonMultipleTimes(isUp ? inc : dec, start, () => fineTune(), 5, 100);
+        } else {
+            fineTune();
+        }
+
+        function fineTune() {
+            if(exchangeState.shouldCancel) {
+                exchangeState.isProcessing = false;
+                return;
+            }
+
+            const cur = getCurrentPrice();
+
+            if(cur === target) {
+                updateExchangeStatus(`Success: Price ${cur}`);
+                exchangeState.isProcessing = false;
+                return;
+            }
+
+            const btn = cur < target ? inc : dec;
+            btn.click();
+
+            setTimeout(() => {
+                const nw = getCurrentPrice();
+
+                if(nw === cur || (cur < target && nw >= target) || (cur > target && nw <= target)) {
+                    updateExchangeStatus(`Success: Price ${nw}`);
+                    exchangeState.isProcessing = false;
+                } else {
+                    fineTune();
+                }
+            }, 200);
+        }
+    }
+
+    // Execute trade function
+    function executeTrade(action) {
+        const exchangeState = TOOLKIT.state.exchange;
+        if(exchangeState.isProcessing) return;
+
+        exchangeState.isProcessing = true;
+        updateExchangeStatus(`Processing: ${action}...`);
+
+        const btn = findExactButton(action);
+
+        if(!btn) {
+            updateExchangeStatus(`Error: ${action} missing`);
+            exchangeState.isProcessing = false;
+            return;
+        }
+
+        try {
+            btn.click();
+            updateExchangeStatus(`Success: ${action}`);
+        } catch(e) {
+            updateExchangeStatus(`Error: ${action} failed`);
+        }
+
+        exchangeState.isProcessing = false;
+    }
+
+    // ============= BANK MODULE =============
     function initBankModule() {
         const bankState = TOOLKIT.state.bank;
         const container = document.getElementById('tk-bank-content');
-
         // Create bank module UI
         container.innerHTML = `
             <div class="tk-info">Automatically bank items without Luck Bonuses, Offensive Stats, Defensive Stats, or Level Requirements.</div>
-
             <!-- Status rows -->
             <div class="tk-status-row">
                 <span class="tk-indicator tk-off" id="tk-bank-indicator"></span>
@@ -585,13 +966,11 @@
                 <span class="tk-indicator tk-off" id="tk-run-indicator"></span>
                 <span class="tk-status-label" id="tk-run-status">Status: Stopped</span>
             </div>
-
             <!-- Controls -->
             <div class="tk-controls">
                 <button class="tk-btn" id="tk-bank-toggle">Start</button>
                 <button class="tk-btn" id="tk-bank-check">Check</button>
             </div>
-
             <!-- Stats -->
             <div class="tk-stats">
                 <div class="tk-stat">
@@ -607,7 +986,6 @@
                     <div class="tk-stat-value" id="tk-stat-time">00:00</div>
                 </div>
             </div>
-
             <!-- Log -->
             <div class="tk-log-container" id="tk-bank-log-container">
                 <ul class="tk-log-list" id="tk-bank-log-list"></ul>
@@ -646,27 +1024,22 @@
 
     function toggleBankAuto() {
         const bankState = TOOLKIT.state.bank;
-
         if (!bankState.isBankDetected) {
             bankAddLog('Cannot start: bank not detected', 'error');
             return;
         }
-
         bankState.isRunning ? stopBankAuto() : startBankAuto();
     }
 
     function startBankAuto() {
         const bankState = TOOLKIT.state.bank;
         const dom = TOOLKIT.dom.bank;
-
         bankState.isRunning = true;
         bankState.emptyScansCount = 0; // Reset empty scans counter when starting
-
         dom.toggleBtn.classList.add('tk-active');
         dom.toggleBtn.textContent = 'Stop';
         dom.runIndicator.classList.replace('tk-off', 'tk-on');
         dom.runStatus.textContent = 'Status: Running';
-
         bankState.sessionStart = new Date();
         bankState.intervalId = setInterval(() => {
             updateBankRunTime();
@@ -674,9 +1047,7 @@
                 processInventory();
             }
         }, TOOLKIT.config.bank.checkInterval);
-
         bankAddLog('Auto banking started', 'success');
-
         // Run immediately if bank is detected
         if (bankState.isBankDetected && !bankState.depositing) {
             processInventory();
@@ -686,59 +1057,48 @@
     function stopBankAuto() {
         const bankState = TOOLKIT.state.bank;
         const dom = TOOLKIT.dom.bank;
-
         bankState.isRunning = false;
         dom.toggleBtn.classList.remove('tk-active');
         dom.toggleBtn.textContent = 'Start';
         dom.runIndicator.classList.replace('tk-on', 'tk-off');
         dom.runStatus.textContent = 'Status: Stopped';
-
         if (bankState.intervalId) {
             clearInterval(bankState.intervalId);
             bankState.intervalId = null;
         }
-
         bankAddLog('Auto banking stopped', 'info');
     }
 
     function updateBankRunTime() {
         const bankState = TOOLKIT.state.bank;
         if (!bankState.sessionStart) return;
-
         const now = new Date();
         const diff = Math.floor((now - bankState.sessionStart) / 1000);
         const minutes = Math.floor(diff / 60).toString().padStart(2, '0');
         const seconds = (diff % 60).toString().padStart(2, '0');
-
         TOOLKIT.dom.bank.statTime.textContent = `${minutes}:${seconds}`;
     }
 
     function detectBank() {
         const bankState = TOOLKIT.state.bank;
         const prev = bankState.isBankDetected;
-
         // Method 1: Check for buttons with "Deposit" text
         const hasDeposit = Array.from(document.querySelectorAll('button')).some(b =>
             b.textContent.trim() === 'Deposit'
         );
-
         // Method 2: Check for h2 elements with "Bank Tellers" text
         const hasHeading = Array.from(document.querySelectorAll('h2')).some(h =>
             h.textContent.includes('Bank Tellers')
         );
-
         // Method 3: Check if text in body contains "Bank Tellers"
         const hasBodyText = document.body.textContent && document.body.textContent.includes('Bank Tellers');
-
         const detected = hasDeposit || hasHeading || hasBodyText;
         bankState.isBankDetected = detected;
-
         // Update UI
         const dom = TOOLKIT.dom.bank;
         dom.bankIndicator.classList.toggle('tk-on', detected);
         dom.bankIndicator.classList.toggle('tk-off', !detected);
         dom.bankStatus.textContent = detected ? 'Bank: Detected' : 'Bank: Not Detected';
-
         // Log status changes
         if (detected && !prev) bankAddLog('Bank detected', 'success');
         if (!detected && prev) bankAddLog('Bank lost', 'error');
@@ -746,53 +1106,39 @@
 
     function processInventory() {
         const bankState = TOOLKIT.state.bank;
-
         if (bankState.depositing || !bankState.isRunning) return;
-
         bankAddLog('Scanning inventory...', 'info');
-
         // Find the inventory heading
         const invHeading = Array.from(document.querySelectorAll('h2')).find(h =>
             h.textContent.trim() === 'Inventory'
         );
-
         if (!invHeading) {
             bankAddLog('Inventory heading not found', 'error');
             return;
         }
-
         // Find the container with the inventory
         let container = invHeading;
         while (container && !container.classList.contains('rounded-lg'))
             container = container.parentElement;
-
         if (!container) {
             bankAddLog('Inventory container not found', 'error');
             return;
         }
-
         bankAddLog('Found inventory container', 'success');
-
         // Find all items within the inventory container
         const items = container.querySelectorAll('.w-full.aspect-square.border-2.border-\\[\\#4f3e37\\].rounded');
-
         if (!items.length) {
             bankAddLog('No inventory items found', 'error');
             return;
         }
-
         bankAddLog(`Found ${items.length} inventory items`, 'info');
-
         // Find eligible items (without stats/requirements)
         const eligible = [];
-
         items.forEach(item => {
             const tooltip = item.querySelector('.tooltip');
             if (!tooltip) return;
-
             const tooltipContainer = tooltip.querySelector('.tooltipContainer');
             if (!tooltipContainer) return;
-
             if (isItemEligibleForBanking(tooltipContainer)) {
                 eligible.push({
                     element: item,
@@ -800,18 +1146,15 @@
                 });
             }
         });
-
         if (eligible.length) {
             // Reset the empty scans counter when we find eligible items
             bankState.emptyScansCount = 0;
-
             bankAddLog(`Found ${eligible.length} eligible items`, 'success');
             const item = eligible[0];
             processItem(item.element, item.name, item.quantity);
         } else {
             // Increment empty scans counter
             bankState.emptyScansCount++;
-
             // Check if we've hit the maximum number of consecutive empty scans
             if (bankState.emptyScansCount >= TOOLKIT.config.bank.maxConsecutiveEmptyScans) {
                 bankAddLog('No bankable items found in multiple scans. Auto-stopping.', 'info');
@@ -824,15 +1167,12 @@
 
     function isItemEligibleForBanking(tooltipContainer) {
         if (!tooltipContainer) return false;
-
         const text = tooltipContainer.textContent || '';
-
         // Check for lack of stats sections
         const hasLuckBonuses = text.includes('Luck Bonuses');
         const hasOffensiveStats = text.includes('Offensive Stats');
         const hasDefensiveStats = text.includes('Defensive Stats');
         const hasLevelRequirements = text.includes('Level Requirements');
-
         // Only select items that don't have any of these sections
         return !hasLuckBonuses && !hasOffensiveStats && !hasDefensiveStats && !hasLevelRequirements;
     }
@@ -840,18 +1180,15 @@
     function extractItemInfo(tooltipContainer, itemElement) {
         let name = 'Unknown Item';
         let quantity = 1;
-
         // Try to find the item name
         const nameElement = tooltipContainer.querySelector('h3');
         if (nameElement) {
             name = nameElement.textContent.trim();
         }
-
         // Try to find the quantity using the absolute positioned element
         const quantityElement = itemElement.querySelector('.z-120.text-\\[\\#ffb83f\\].absolute.font-bold.bottom-1.left-1.text-xs');
         if (quantityElement) {
             const quantityText = quantityElement.textContent.trim();
-
             // Parse the quantity - handle cases like "2", "2K", etc.
             if (quantityText.endsWith('K')) {
                 quantity = parseInt(quantityText.replace('K', '')) * 1000;
@@ -867,14 +1204,13 @@
                 const quantityText = tooltipQuantityElement.parentElement.textContent.trim();
                 if (quantityText) {
                     // Extract just the number part from "x 2,045" format
-                    const match = quantityText.match(/x\s*([0-9,]+)/);
+                    const match = quantityText.match(/x\s([0-9,]+)/);
                     if (match && match[1]) {
                         quantity = parseInt(match[1].replace(/,/g, '')) || 1;
                     }
                 }
             }
         }
-
         bankAddLog(`Extracted item info: ${name} (x${quantity})`, 'info');
         return { name, quantity };
     }
@@ -882,53 +1218,41 @@
     function findDepositButton() {
         // Find all buttons and look for one with "Deposit" text
         const buttons = document.querySelectorAll('button');
-
         for (const button of buttons) {
             if (button.textContent && button.textContent.trim() === 'Deposit') {
                 return button;
             }
         }
-
         return null;
     }
 
     function processItem(el, name, qty) {
         const bankState = TOOLKIT.state.bank;
         const dom = TOOLKIT.dom.bank;
-
         if (!el || bankState.depositing) return;
-
         bankState.depositing = true;
-
         bankAddLog(`Processing item: ${name} (x${qty})`, 'info');
-
         // Add a visual indicator that we're clicking this item
         const origBorder = el.style.border;
         el.style.border = '2px solid red';
-
         // Click on the item to add it to the bank counter
         try {
             el.click();
-
             // Wait for the item to be added to the bank counter
             setTimeout(() => {
                 // Remove the visual indicator
                 el.style.border = origBorder;
-
                 // Find and click the deposit button
                 const depositBtn = findDepositButton();
                 if (depositBtn && !depositBtn.disabled) {
                     bankAddLog(`Depositing ${name} (x${qty})...`, 'info');
-
                     // Update stats
                     bankState.itemsDeposited++;
                     dom.statItems.textContent = bankState.itemsDeposited;
                     bankState.totalValue += qty;
                     dom.statValue.textContent = bankState.totalValue;
-
                     // Click the deposit button
                     depositBtn.click();
-
                     // Reset depositing flag after a delay
                     setTimeout(() => {
                         bankAddLog(`Successfully deposited ${name} (x${qty})`, 'success');
@@ -942,7 +1266,6 @@
         } catch (error) {
             // Remove the visual indicator
             el.style.border = origBorder;
-
             bankAddLog(`Error clicking item: ${error.message}`, 'error');
             bankState.depositing = false;
         }
@@ -955,26 +1278,21 @@
         const ts = `[${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}]`;
         li.innerHTML = `<span class="tk-log-time">${ts}</span> <span class="tk-log-${type}">${msg}</span>`;
         dom.logList.appendChild(li);
-
         // Limit log entries
         while (dom.logList.children.length > TOOLKIT.config.bank.maxLogEntries)
             dom.logList.removeChild(dom.logList.firstChild);
-
         // Auto-scroll to bottom
         dom.logContainer.scrollTop = dom.logContainer.scrollHeight;
     }
 
     // ============= NAVIGATOR MODULE =============
-
     function initNavModule() {
         const navState = TOOLKIT.state.nav;
         const container = document.getElementById('tk-nav-content');
-
         // Create navigator module UI
         container.innerHTML = `
             <!-- Current Location -->
             <div class="tk-nav-location" id="tk-nav-location">Loading...</div>
-
             <!-- Direction Buttons -->
             <div class="tk-nav-buttons">
                 <div><button id="tk-nav-north">▲</button></div>
@@ -984,7 +1302,6 @@
                 </div>
                 <div><button id="tk-nav-south">▼</button></div>
             </div>
-
             <!-- Destinations -->
             <div class="tk-nav-destinations">
                 <select id="tk-nav-destination">
@@ -992,7 +1309,6 @@
                 </select>
                 <button id="tk-nav-go" class="tk-btn" disabled>Go</button>
             </div>
-
             <!-- Status -->
             <div class="tk-stats">
                 <div class="tk-stat">
@@ -1057,14 +1373,12 @@
         function cleanupInvalidLocations() {
             const locations = navState.locationData.locations;
             const connections = navState.locationData.connections;
-
             // Remove invalid locations
             Object.keys(locations).forEach(loc => {
                 if (!validLocations.has(loc)) {
                     delete locations[loc];
                 }
             });
-
             // Remove invalid connections
             Object.keys(connections).forEach(loc => {
                 if (!validLocations.has(loc)) {
@@ -1079,7 +1393,6 @@
                     });
                 }
             });
-
             // Save cleaned data
             saveNavData();
         }
@@ -1103,32 +1416,25 @@
         }
 
         function updateLocation() {
-            const selectors = ['p.capitalize.font-bold', 'p.capitalize', '[class*="text-[#ffb83f]"] p'];
-
+            const selectors = ['p.capitalize.font-bold', 'p.capitalize', '[class="text-[#ffb83f]"] p'];
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
                 if (!el) continue;
-
                 const txt = el.textContent.trim();
                 if (/roll the dice/i.test(txt)) continue;
                 if (!txt || /last played\s.*ago/i.test(txt)) continue;
-
                 // Only record current location if it's a valid location from default set
                 if (validLocations.has(txt)) {
                     if (navState.locationData.current && navState.locationData.current !== txt) {
                         recordConnection(navState.locationData.current, txt);
                     }
-
                     navState.locationData.current = txt;
-
                     // Only update locations if it's in the valid set
                     if (!navState.locationData.locations[txt]) {
                         navState.locationData.locations[txt] = 1;
                         saveNavData();
                     }
-
                     TOOLKIT.dom.nav.location.textContent = txt;
-
                     if (navState.autoNavigating && txt === navState.navDestination) {
                         stopAutoNav();
                     }
@@ -1136,30 +1442,23 @@
                     // For non-valid locations, still display but don't save
                     TOOLKIT.dom.nav.location.textContent = txt;
                 }
-
                 return;
             }
-
             TOOLKIT.dom.nav.location.textContent = 'Unknown';
         }
 
         function recordConnection(from, to) {
             if (!navState.lastDirection) return;
-
             // Only record connections between valid locations
             if (!validLocations.has(from) || !validLocations.has(to)) {
                 navState.lastDirection = '';
                 return;
             }
-
             const rev = { north: 'south', south: 'north', east: 'west', west: 'east' };
-
             navState.locationData.connections[from] = navState.locationData.connections[from] || {};
             navState.locationData.connections[from][navState.lastDirection] = to;
-
             navState.locationData.connections[to] = navState.locationData.connections[to] || {};
             navState.locationData.connections[to][rev[navState.lastDirection]] = from;
-
             navState.lastDirection = '';
             saveNavData();
         }
@@ -1168,14 +1467,12 @@
             const gameBtns = Array.from(document.querySelectorAll('button')).filter(b =>
                 b.querySelector('svg path')
             );
-
             for (const dir in directionPaths) {
                 const btn = TOOLKIT.dom.nav[`${dir}Btn`];
                 const pathD = directionPaths[dir];
                 const enabled = gameBtns.some(g =>
                     g.querySelector('svg path').getAttribute('d') === pathD
                 );
-
                 btn.disabled = !enabled;
                 btn.style.opacity = enabled ? '1' : '0.4';
             }
@@ -1184,16 +1481,13 @@
         function updateDestinations() {
             const select = TOOLKIT.dom.nav.destinationSelect;
             const prevValue = select.value;
-
             // Clear options
             select.innerHTML = '';
-
             // Add placeholder
             const placeholder = new Option('Select destination…', '');
             placeholder.disabled = true;
             placeholder.selected = true;
             select.add(placeholder);
-
             // Add location options - only include valid locations
             Object.keys(navState.locationData.locations)
                 .filter(loc => loc && loc !== navState.locationData.current && validLocations.has(loc))
@@ -1201,19 +1495,16 @@
                 .forEach(loc => {
                     select.add(new Option(loc, loc));
                 });
-
             // Restore previous selection if possible
             if ([...select.options].some(opt => opt.value === prevValue)) {
                 select.value = prevValue;
             }
-
             // Update go button state
             TOOLKIT.dom.nav.goBtn.disabled = !select.value;
         }
 
         function updateNavStatus() {
             const status = TOOLKIT.dom.nav.statusValue;
-
             if (navState.autoNavigating) {
                 status.textContent = `To ${navState.navDestination} — Steps: ${navState.navPath.length}`;
                 status.style.color = '#7fff7f';
@@ -1225,31 +1516,22 @@
 
         function findPath(start, end) {
             if (start === end) return [];
-
             const queue = [{ loc: start, path: [] }];
             const seen = { [start]: true };
-
             while (queue.length) {
                 const { loc, path } = queue.shift();
                 const connections = navState.locationData.connections[loc] || {};
-
                 for (const dir in connections) {
                     const nextLoc = connections[dir];
-
                     // Skip invalid locations in pathfinding
                     if (!validLocations.has(nextLoc)) continue;
-
                     if (seen[nextLoc]) continue;
-
                     const newPath = path.concat({ direction: dir, location: nextLoc });
-
                     if (nextLoc === end) return newPath;
-
                     seen[nextLoc] = true;
                     queue.push({ loc: nextLoc, path: newPath });
                 }
             }
-
             return null;
         }
 
@@ -1257,25 +1539,20 @@
             if (!navState.locationData.current || !destination || navState.locationData.current === destination) {
                 return;
             }
-
             navState.navDestination = destination;
             navState.navPath = findPath(navState.locationData.current, destination) || [];
             navState.autoNavigating = true;
-
             clearInterval(navState.autoNavInterval);
             navState.autoNavInterval = setInterval(stepAutoNav, 1500);
         }
 
         function stepAutoNav() {
             if (!navState.autoNavigating) return;
-
             if (!navState.navPath.length) {
                 stopAutoNav();
                 return;
             }
-
             const next = navState.navPath[0];
-
             if (navState.locationData.current !== next.location) {
                 manualNav(next.direction);
             } else {
@@ -1324,16 +1601,13 @@
             current: 'glenwich',
             ...getDefaultNavData()
         };
-
         saveNavData();
     }
 
     // ============= XP TRACKER MODULE =============
-
     function initXPModule() {
         const xpState = TOOLKIT.state.xp;
         const container = document.getElementById('tk-xp-content');
-
         // Create XP tracker module UI with reset button
         container.innerHTML = `
             <div class="tk-info">Hover over skills to see experience tracking data.</div>
@@ -1385,18 +1659,14 @@
 
     function scanInitialXPData() {
         const xpState = TOOLKIT.state.xp;
-
         document.querySelectorAll('.tooltip').forEach(tooltip => {
             const row = tooltip.querySelector('.cursor-pointer');
             if (!row) return;
-
             const name = getSkillName(tooltip);
             const level = getSkillLevel(tooltip);
             const content = tooltip.querySelector('.tooltip-content');
             const data = parseXPData(content);
-
             if (!data) return;
-
             xpState.skillData[name] = {
                 name,
                 level: level.text,
@@ -1415,21 +1685,17 @@
                 expHistory: [{ timestamp: Date.now(), exp: data.totalExp }]
             };
         });
-
         return Object.keys(xpState.skillData).length > 0;
     }
 
     function updateXPData() {
         const xpState = TOOLKIT.state.xp;
-
         document.querySelectorAll('.tooltip').forEach(tooltip => {
             const row = tooltip.querySelector('.cursor-pointer');
             if (!row) return;
-
             const name = getSkillName(tooltip);
             const skill = xpState.skillData[name];
             if (!skill) return;
-
             // Update level data
             const currentLevel = getSkillLevel(tooltip);
             // Update skill level if changed
@@ -1439,35 +1705,27 @@
                 // Calculate levels gained
                 skill.levelsGained = currentLevel.value - skill.initialLevel;
             }
-
             const content = tooltip.querySelector('.tooltip-content');
             const data = parseXPData(content);
             if (!data) return;
-
             const now = Date.now();
-
             if (data.totalExp !== skill.latestExp) {
                 const timeMinutes = (now - skill.latestTimestamp) / 60000;
                 const expDiff = data.totalExp - skill.latestExp;
-
                 skill.expHistory.push({ timestamp: now, exp: data.totalExp });
                 skill.expHistory = skill.expHistory.filter(p =>
                     p.timestamp >= now - TOOLKIT.config.xp.runWindow * 1.5
                 );
-
                 if (timeMinutes > 0.05) {
                     skill.expGainRate = expDiff / timeMinutes;
                     skill.runningAvg = calculateRunningAverage(skill.expHistory);
                     skill.isActive = true;
                 }
-
                 skill.latestExp = data.totalExp;
                 skill.latestTimestamp = now;
                 skill.expToLevel = data.expToLevel;
-
                 if (skill.runningAvg > 0) {
                     const minutesToLevel = skill.expToLevel / skill.runningAvg;
-
                     if (minutesToLevel < 60) {
                         skill.timeToLevel = `${Math.ceil(minutesToLevel).toLocaleString()}m`;
                     } else if (minutesToLevel < 1440) {
@@ -1487,26 +1745,19 @@
     function updateXPDisplay() {
         const xpState = TOOLKIT.state.xp;
         const contentEl = TOOLKIT.dom.xp.content;
-
         contentEl.innerHTML = '';
-
         const skills = Object.values(xpState.skillData)
             .sort((a, b) => b.isActive - a.isActive || a.name.localeCompare(b.name));
-
         if (!skills.length) {
             contentEl.innerHTML = `<div class="tk-no-data">Hover over skills to start tracking.</div>`;
             return;
         }
-
         let activeSkillsFound = false;
-
         skills.forEach(skill => {
             if (!skill.isActive) return;
             activeSkillsFound = true;
-
             const section = document.createElement('div');
             section.className = 'tk-skill-section';
-
             const header = document.createElement('div');
             header.className = 'tk-skill-title';
             // Add level gain indicator if levels gained > 0
@@ -1514,12 +1765,9 @@
                 <span>${skill.name} ${skill.level}${skill.levelsGained > 0 ? ` <span style="color:#7fff7f">(+${skill.levelsGained})</span>` : ''}</span>
                 <span>+${(skill.latestExp - skill.initialExp).toLocaleString()}xp</span>
             `;
-
             section.append(header);
-
             const stats = document.createElement('div');
             stats.className = 'tk-skill-stats';
-
             const statRows = [
                 ['Now', `${Math.round(skill.expGainRate).toLocaleString()}/m`],
                 ['Avg5', `${Math.round(skill.runningAvg).toLocaleString()}/m`],
@@ -1527,18 +1775,15 @@
                 ['Remaining', `${skill.expToLevel.toLocaleString()}xp`],
                 ['ToLvl', skill.timeToLevel]
             ];
-
             statRows.forEach(([label, value]) => {
                 const row = document.createElement('div');
                 row.className = 'tk-row';
                 row.innerHTML = `<span>${label}</span><span>${value}</span>`;
                 stats.append(row);
             });
-
             section.append(stats);
             contentEl.append(section);
         });
-
         if (!activeSkillsFound) {
             contentEl.innerHTML = `<div class="tk-no-data">No active skills. Hover over skills while training.</div>`;
         }
@@ -1546,32 +1791,25 @@
 
     function resetXPData() {
         const xpState = TOOLKIT.state.xp;
-
         // Clear all skill data
         xpState.skillData = {};
-
         // Re-scan for initial data
         scanInitialXPData();
-
         // Update the display
         updateXPDisplay();
-
         // Log the reset
         console.log('[Glenwich Toolkit] XP tracking data reset');
     }
 
     function setupXPObserver() {
         const xpState = TOOLKIT.state.xp;
-
         if (xpState.tooltipObserver) {
             xpState.tooltipObserver.disconnect();
         }
-
         xpState.tooltipObserver = new MutationObserver(() => {
             updateXPData();
             updateXPDisplay();
         });
-
         document.querySelectorAll('.tooltip').forEach(tooltip => {
             xpState.tooltipObserver.observe(tooltip, { attributes: true });
         });
@@ -1585,12 +1823,10 @@
     function getSkillLevel(tooltip) {
         const levelEl = tooltip.querySelector('.font-mono');
         if (!levelEl) return { text: '0/0', value: 0 };
-
         const levelText = levelEl.textContent.trim();
         // Parse the numeric level (e.g. from format "5/99" extract 5)
         const levelMatch = levelText.match(/^(\d+)/);
         const numericLevel = levelMatch ? parseInt(levelMatch[1], 10) : 0;
-
         return {
             text: levelText,
             value: numericLevel
@@ -1599,15 +1835,11 @@
 
     function parseXPData(element) {
         if (!element) return null;
-
         const text = element.textContent;
         if (!text || !text.includes('Total Experience')) return null;
-
         const totalMatch = text.match(/([0-9,]+)\s+Total Experience/);
         const levelMatch = text.match(/([0-9,]+)\s+to Level Up/);
-
         if (!totalMatch || !levelMatch) return null;
-
         return {
             totalExp: parseInt(totalMatch[1].replace(/,/g, ''), 10),
             expToLevel: parseInt(levelMatch[1].replace(/,/g, ''), 10)
@@ -1617,35 +1849,26 @@
     function calculateRunningAverage(history) {
         const now = Date.now();
         const cutoff = now - TOOLKIT.config.xp.runWindow;
-
         const recent = history.filter(point => point.timestamp >= cutoff);
-
         if (recent.length < 2) return 0;
-
         recent.sort((a, b) => a.timestamp - b.timestamp);
-
         const expDiff = recent[recent.length - 1].exp - recent[0].exp;
         const timeDiffMinutes = (recent[recent.length - 1].timestamp - recent[0].timestamp) / 60000;
-
         return timeDiffMinutes > 0 ? expDiff / timeDiffMinutes : 0;
     }
 
     // ============= DUNGEON MODULE =============
-
     function initDungeonModule() {
         const dungeonState = TOOLKIT.state.dungeon;
         const container = document.getElementById('tk-dungeon-content');
-
         // Create dungeon re-enter module UI
         container.innerHTML = `
             <div class="tk-info">Automatically re-enters the dungeon after death.</div>
-
             <!-- Status rows -->
             <div class="tk-status-row">
                 <span class="tk-indicator tk-off" id="tk-dungeon-indicator"></span>
                 <span class="tk-status-label">Auto Reentry: Inactive</span>
             </div>
-
             <!-- Stats -->
             <div class="tk-stats">
                 <div class="tk-stat">
@@ -1661,7 +1884,6 @@
                     <div class="tk-stat-value">${(TOOLKIT.config.dungeon.scanInterval/1000)}s</div>
                 </div>
             </div>
-
             <!-- Controls -->
             <div class="tk-controls">
                 <button class="tk-btn" id="tk-dungeon-toggle">Enable</button>
@@ -1682,7 +1904,6 @@
 
     function toggleDungeonAuto() {
         const dungeonState = TOOLKIT.state.dungeon;
-
         if (dungeonState.isEnabled) {
             stopDungeonAuto();
         } else {
@@ -1693,12 +1914,9 @@
     function startDungeonAuto() {
         const dungeonState = TOOLKIT.state.dungeon;
         const dom = TOOLKIT.dom.dungeon;
-
         dungeonState.isEnabled = true;
-
         clearInterval(dungeonState.intervalId);
         dungeonState.intervalId = setInterval(checkDungeonDialog, TOOLKIT.config.dungeon.scanInterval);
-
         // Update UI
         dom.indicator.classList.replace('tk-off', 'tk-on');
         dom.indicator.nextSibling.textContent = 'Auto Reentry: Active';
@@ -1709,12 +1927,9 @@
     function stopDungeonAuto() {
         const dungeonState = TOOLKIT.state.dungeon;
         const dom = TOOLKIT.dom.dungeon;
-
         dungeonState.isEnabled = false;
-
         clearInterval(dungeonState.intervalId);
         dungeonState.intervalId = null;
-
         // Update UI
         dom.indicator.classList.replace('tk-on', 'tk-off');
         dom.indicator.nextSibling.textContent = 'Auto Reentry: Inactive';
@@ -1724,40 +1939,29 @@
 
     function checkDungeonDialog() {
         const dungeonState = TOOLKIT.state.dungeon;
-
         if (!dungeonState.isEnabled) return;
-
         // Look for the "Are you sure?" dialog
         const dialogHeaders = Array.from(document.querySelectorAll('h3.text-xl.font-bold.text-center'))
             .filter(h => h.textContent === 'Are you sure?');
-
         if (dialogHeaders.length === 0) return;
-
         // Find the dialog container
         const dialogHeader = dialogHeaders[0];
         const dialogContainer = dialogHeader.closest('.flex.flex-col.w-full.border-2');
-
         if (!dialogContainer) return;
-
         // Find the "Enter" button
         const buttons = dialogContainer.querySelectorAll('button');
         const enterButton = Array.from(buttons).find(btn => btn.textContent === 'Enter');
-
         if (!enterButton) return;
-
         // Click the Enter button
         enterButton.click();
-
         // Update stats
         dungeonState.reentryCount++;
         dungeonState.lastActionTime = new Date().toLocaleTimeString();
-
         TOOLKIT.dom.dungeon.countValue.textContent = dungeonState.reentryCount.toLocaleString();
         TOOLKIT.dom.dungeon.timeValue.textContent = dungeonState.lastActionTime;
     }
 
     // ============= INITIALIZATION =============
-
     // Start the toolkit
     if (document.readyState === 'loading') {
         window.addEventListener('DOMContentLoaded', initToolkit);
