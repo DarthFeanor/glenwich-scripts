@@ -1785,7 +1785,7 @@
             contentEl.append(section);
         });
         if (!activeSkillsFound) {
-            contentEl.innerHTML = `<div class="tk-no-data">No active skills. Hover over skills while training.</div>`;
+            contentEl.innerHTML = `<div class="tk-no-data">No active skills. Start an action to track.</div>`;
         }
     }
 
