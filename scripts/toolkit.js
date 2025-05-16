@@ -806,17 +806,17 @@
 
             if(!chosen) {
                 actionBtn.click();
-                await sleep(100);
+                await sleep(50);
                 continue;
             }
 
             exchangeLog(`Setting denom: ${chosen.name}`);
             chosen.btn.click();
-            await sleep(100);
+            await sleep(50);
 
             exchangeLog(`Stepping ${diff > 0 ? '+' : '-'}${chosen.val}`);
             actionBtn.click();
-            await sleep(100);
+            await sleep(50);
         }
 
         if(!exchangeState.shouldCancel) {
@@ -1610,9 +1610,9 @@
         const container = document.getElementById('tk-xp-content');
         // Create XP tracker module UI with reset button
         container.innerHTML = `
-            <div class="tk-info">Hover over skills to see experience tracking data.</div>
+            <div class="tk-info">Automaticaly track skills data to see experience tracking data.</div>
             <div id="tk-xp-content-inner">
-                <div class="tk-no-data">Hover over skills to start tracking.</div>
+                <div class="tk-no-data">Start an action to start tracking.</div>
             </div>
             <div class="tk-controls">
                 <button class="tk-btn" id="tk-xp-refresh">Refresh</button>
