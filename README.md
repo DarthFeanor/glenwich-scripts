@@ -10,26 +10,8 @@ Developed and maintained by **Txdxrxv** and **Feanor**.
 
 ## 📜 Available Scripts
 
-### 1. **XP Tracker**
-Tracks how much experience you're gaining per minute and estimates time remaining until your next level in the currently active skill. Perfect for grinders and optimizers.
-
-### 2. **Auto Banking**
-Once activated while viewing your bank, this script will automatically deposit all items that:
-- Do **not** provide Luck bonuses
-- Do **not** have Defensive or Offensive stats
-- Do **not** have any level requirements
-
-Extremely useful for auto-clearing junk items like **Masked Hoods** from dungeon runs.
-
-### 3. **Auto Dungeon**
-Automatically re-enters dungeons after death. Great for consistent farming in harder areas like **Lostmere's Cemetery**, improving EXP per hour with minimal downtime.
-
-### 4. **Auto Location**
-Allows you to automatically travel to a selected location from a dropdown list.  
-Perfect for long runs, travel loops, or just saving clicks while farming across regions.
-
-### 5. **All-in-One Toolkit Script**
-A compiled version that includes **XP Tracker**, **Auto Banking**, **Auto Dungeon**, and **Auto Location** in a **single unified script**.  
+### 1. **All-in-One Toolkit Script**
+A compiled version that includes **Auto Exchange**, **XP Tracker**, **Auto Banking**, and **Auto Navigation** in a **single unified script**.  
 Great for players who want to run everything at once with minimal setup.
 
 ---
