@@ -1,8 +1,7 @@
 // ==UserScript==
 // @name         Glenwich Ultimate Toolkit
-// @namespace    https://github.com/DarthFeanor/glenwich-scripts
-// @version      10.0
-// @description  Ultimate toolkit for Glenwich - Exchange, Bank, Navigation, XP Tracking, and Dungeon Auto-Reenter
+// @version      10.1
+// @description  Ultimate toolkit for Glenwich
 // @author       Txdxrxv
 // @match        https://glenwich.com/*
 // @exclude      https://wiki.glenwich.com/*
@@ -14,9 +13,20 @@
 (function() {
     'use strict';
 
+    // ============= MODULE CONFIGURATION =============
+    // Set to false to disable modules completely
+    const MODULE_CONFIG = {
+        exchange: true,   // Exchange automation module
+        bank: true,       // Auto banking module
+        nav: true,        // Navigation helper module
+        xp: true,         // XP tracking module
+        dungeon: false     // Dungeon auto re-enter module
+    };
+
     // ============= UNIFIED CONFIG AND STATE =============
     const TOOLKIT = {
-        version: '10.0',
+        version: '10.1',
+        modules: MODULE_CONFIG, // Add module config reference
         config: {
             // Exchange module config
             exchange: {
@@ -24,8 +34,8 @@
             },
             // Bank module config
             bank: {
-                checkInterval: 1500,
-                actionDelay: 800,
+                checkInterval: 750,
+                actionDelay: 500,
                 maxLogEntries: 50,
                 initDelay: 1000,
                 maxConsecutiveEmptyScans: 3
@@ -45,7 +55,7 @@
             }
         },
         state: {
-            activeTab: 'exchange',
+            activeTab: '', // Will be set to first enabled module
             isMinimized: false,
             // Exchange state
             exchange: {
@@ -91,9 +101,23 @@
         dom: {} // Will hold references to important DOM elements
     };
 
+    // Get list of enabled modules
+    function getEnabledModules() {
+        return Object.keys(MODULE_CONFIG).filter(module => MODULE_CONFIG[module]);
+    }
+
+    // Get first enabled module for default tab
+    function getDefaultTab() {
+        const enabled = getEnabledModules();
+        return enabled.length > 0 ? enabled[0] : 'exchange';
+    }
+
     // ============= INIT SEQUENCE =============
     // Main initialization
     function initToolkit() {
+        // Set default active tab to first enabled module
+        TOOLKIT.state.activeTab = getDefaultTab();
+
         injectStyles();
         createWidget();
         // Initialize modules when game is ready
@@ -106,24 +130,28 @@
             if (document.querySelector('.tooltip')) {
                 clearInterval(readyCheck);
                 console.log('[Glenwich Toolkit] Game ready, initializing modules...');
-                // Initialize all modules
-                initExchangeModule();
-                initBankModule();
-                initNavModule();
-                initXPModule();
-                initDungeonModule();
+
+                // Initialize only enabled modules
+                if (MODULE_CONFIG.exchange) initExchangeModule();
+                if (MODULE_CONFIG.bank) initBankModule();
+                if (MODULE_CONFIG.nav) initNavModule();
+                if (MODULE_CONFIG.xp) initXPModule();
+                if (MODULE_CONFIG.dungeon) initDungeonModule();
+
                 // Show active tab
                 showTab(TOOLKIT.state.activeTab);
-                // Add keyboard shortcuts (Alt+T for toolkit, Alt+E for Exchange tab)
+
+                // Add keyboard shortcuts (Alt+T for toolkit, Alt+E for Exchange tab if enabled)
                 document.addEventListener('keydown', e => {
                     if (e.altKey && e.key.toLowerCase() === 't') {
                         toggleWidget();
-                    } else if (e.altKey && e.key.toLowerCase() === 'e') {
+                    } else if (e.altKey && e.key.toLowerCase() === 'e' && MODULE_CONFIG.exchange) {
                         TOOLKIT.dom.widget.style.display = 'block';
                         showTab('exchange');
                     }
                 });
-                console.log('[Glenwich Toolkit] All modules initialized!');
+
+                console.log('[Glenwich Toolkit] Enabled modules initialized:', getEnabledModules().join(', '));
             }
         }, 500);
     }
@@ -139,9 +167,11 @@
         // Main widget container
         const widget = document.createElement('div');
         widget.id = 'glenwich-toolkit';
+
         // Create header
         const header = document.createElement('div');
         header.className = 'tk-header';
+
         // Title container with main title and subtitle
         const titleContainer = document.createElement('div');
         titleContainer.className = 'tk-title-container';
@@ -160,11 +190,12 @@
         header.append(titleContainer, minBtn);
         widget.append(header);
 
-        // Create tab bar
+        // Create tab bar - only for enabled modules
         const tabBar = document.createElement('div');
         tabBar.className = 'tk-tabs';
-        // Add tab buttons - added Exchange as the first tab
-        const tabs = [
+
+        // Define all available tabs
+        const allTabs = [
             { id: 'exchange', label: 'Exchange' },
             { id: 'bank', label: 'Bank' },
             { id: 'nav', label: 'Nav' },
@@ -172,7 +203,11 @@
             { id: 'dungeon', label: 'Dungeon' }
         ];
 
-        tabs.forEach(tab => {
+        // Filter to only enabled tabs
+        const enabledTabs = allTabs.filter(tab => MODULE_CONFIG[tab.id]);
+
+        // Create tab buttons for enabled modules only
+        enabledTabs.forEach(tab => {
             const tabBtn = document.createElement('button');
             tabBtn.className = 'tk-tab-btn';
             tabBtn.setAttribute('data-tab', tab.id);
@@ -182,18 +217,40 @@
             });
             tabBar.append(tabBtn);
         });
-        widget.append(tabBar);
+
+        // Only add tab bar if there are enabled modules
+        if (enabledTabs.length > 0) {
+            widget.append(tabBar);
+        }
 
         // Create content area
         const content = document.createElement('div');
         content.className = 'tk-content';
-        // Create content containers for each module
-        tabs.forEach(tab => {
+
+        // Create content containers for enabled modules only
+        enabledTabs.forEach(tab => {
             const tabContent = document.createElement('div');
             tabContent.className = 'tk-tab-content';
             tabContent.id = `tk-${tab.id}-content`;
             content.append(tabContent);
         });
+
+        // Add message if no modules are enabled
+        if (enabledTabs.length === 0) {
+            const noModulesMsg = document.createElement('div');
+            noModulesMsg.className = 'tk-tab-content';
+            noModulesMsg.style.display = 'block';
+            noModulesMsg.innerHTML = `
+                <div class="tk-info" style="text-align: center; padding: 20px;">
+                    <div style="color: #ff7f7f; margin-bottom: 10px;">No modules enabled</div>
+                    <div style="font-size: 11px; color: #aaa;">
+                        Edit the MODULE_CONFIG section in the script to enable modules.
+                    </div>
+                </div>
+            `;
+            content.append(noModulesMsg);
+        }
+
         widget.append(content);
 
         // Create footer
@@ -201,10 +258,12 @@
         footer.className = 'tk-footer';
         const footerContent = document.createElement('div');
         footerContent.className = 'tk-footer-content';
+
         // Add attribution text
         const attribution = document.createElement('div');
         attribution.className = 'tk-attribution';
         attribution.textContent = 'made by the "Gods" Guild';
+
         const closeBtn = document.createElement('button');
         closeBtn.className = 'tk-btn';
         closeBtn.textContent = 'Close';
@@ -236,6 +295,9 @@
 
     // Show specific tab
     function showTab(tabId) {
+        // Only show tab if module is enabled
+        if (!MODULE_CONFIG[tabId]) return;
+
         TOOLKIT.state.activeTab = tabId;
         // Update tab buttons
         TOOLKIT.dom.tabBtns.forEach(btn => {
@@ -386,30 +448,19 @@
                 width: 100%;
                 justify-content: space-between;
                 align-items: center;
-                gap: 10px; /* Ensure space between elements */
+                gap: 10px;
             }
             .tk-attribution {
                 font-size: 10px;
                 color: #999;
                 font-style: italic;
-                max-width: 65%; /* Limit width to prevent overlap */
+                max-width: 65%;
                 text-overflow: ellipsis;
                 overflow: hidden;
             }
             .tk-btn {
-                min-width: 60px; /* Fixed minimum width for button */
-                flex: 0 0 auto; /* Prevent button from shrinking */
-                padding: 5px;
-                background: #2a2a2a;
-                color: #ffb83f;
-                border: 1px solid #ffb83f;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 12px;
-                font-family: monospace;
-            }
-            .tk-btn {
-                flex: 1;
+                min-width: 60px;
+                flex: 0 0 auto;
                 padding: 5px;
                 background: #2a2a2a;
                 color: #ffb83f;
